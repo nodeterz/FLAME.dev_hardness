@@ -126,15 +126,15 @@ def get_files():
     cmd='find . -not -path "./futile-suite/*" -iname "*.F90" | LC_COLLATE=en_US.UTF-8 sort'
     str_files=commands.getoutput(cmd)
     files=str_files.splitlines()
-    exclude_files=['./modules/interface_mod.F90',
+    exclude_files=['./src/interface_mod.F90',
                    './wrappers/energyandforces_siesta.f90',
                    './wrappers/energyandforces_openmx.f90',
                    './src/MPIfake.F90',
                    './src/task_netsock.F90',
-                   './modules/constants_minhocao_mod.F90',
-                   './modules/minhocao_mod.F90',
+                   './src/constants_minhocao_mod.F90',
+                   './src/minhocao_mod.F90',
                    './src/lammps_mod.F90',
-                   './modules/fsockets.F90',
+                   './src/fsockets.F90',
                    './src/fingerprint_BCM.F90',
                    './src/fingerprint_gaussmol.F90',
                    './src/recompute_kpt.F90', 
@@ -185,12 +185,16 @@ def get_files():
                    './src/potential_TERSOFF.F90',
                    './src/potential_TINKER.F90',
                    './src/potential_VASP_minhocao.F90',
+                   './src/train_optimizer.F90',
+                   './src/ann_train.F90',
+                   './src/atoms_mod.F90',
+                   './src/ann_mod.F90',
                    ]
     
     for file in exclude_files:
         if file in files: files.remove(file)
     
-    str_interfaced=commands.getoutput('grep -i subroutine ./modules/interface_mod.F90')
+    str_interfaced=commands.getoutput('grep -i subroutine ./src/interface_mod.F90')
     routine_interfaced=str_interfaced.splitlines()
     return files
 #*****************************************************************************************
@@ -321,14 +325,14 @@ def make_interface_routines(lines,routines,iline_routines,fout):
         procedure,subroutine_name=get_subroutine_name(routines[iroutine])
         fout.write("end %s %s\n" % (procedure,subroutine_name))
 #*****************************************************************************************
-str1="Generates modules/interface_mod.F90."
+str1="Generates src/interface_mod.F90."
 parser=argparse.ArgumentParser(description=str1)
 str2="if present, it checks routines for using the module mod_interface."
 parser.add_argument("-use",action='store_false',help=str2)
 args=parser.parse_args()
 use_modinterface=not args.use
 
-fout=open('modules/interface_mod.F90',"w")
+fout=open('src/interface_mod.F90',"w")
 fout.write("!"+"*"*89+"\n")
 fout.write("module mod_interface\n")
 fout.write("    implicit none\n")

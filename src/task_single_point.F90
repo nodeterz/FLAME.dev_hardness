@@ -2,7 +2,7 @@
 subroutine single_point_task(parini)
     use mod_interface
     use mod_parini, only: typ_parini
-    use mod_atoms, only: typ_atoms_arr, typ_file_info
+    use mod_atoms, only: typ_atoms_arr, typ_file_info, set_ndof, atom_deallocate
     use mod_potential, only: fcalls, perfstatus, potential
     use mod_processors, only: iproc
     use mod_const, only: ev2ha, ang2bohr
@@ -89,7 +89,7 @@ end subroutine single_point_task
 subroutine read_poscar_for_single_point(parini,atoms)
     use mod_interface
     use mod_parini, only: typ_parini
-    use mod_atoms, only: typ_atoms
+    use mod_atoms, only: typ_atoms, atom_allocate_old, update_rat
     use global, only: units
     implicit none
     type(typ_parini), intent(inout):: parini !poscar_getsystem must be called from parser
@@ -124,7 +124,8 @@ subroutine read_poscar_for_single_point(parini,atoms)
     call atom_allocate_old(atoms,parini%nat,0,0)
     call read_atomic_file_poscar(filename,atoms%nat,units,xred,atoms%cellvec,fcart,strten, &
         fixat,fixlat,readfix,fragarr,readfrag,printval1,printval2)
-    call rxyz_int2cart_alborz(atoms%nat,atoms%cellvec,xred,atoms%rat)
+    call rxyz_int2cart_alborz(atoms%nat,atoms%cellvec,xred,atoms%ratp)
+    call update_rat(atoms,upall=.true.)
     do iat=1,parini%nat
         atoms%sat(iat)=trim(parini%char_type(parini%typat_global(iat)))
     enddo

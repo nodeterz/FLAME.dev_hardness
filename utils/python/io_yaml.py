@@ -56,6 +56,28 @@ def atoms2dict(atoms):
     dict_atoms['conf']['cell'].append([])
     dict_atoms['conf']['cell'][-1].append([])
     dict_atoms['conf']['cell'][2]=atoms.cellvec[2]
+    if atoms.elecfield_present:
+        dict_atoms['conf']['elecfield']=[-1 for i in range(3)]
+        dict_atoms['conf']['elecfield'][0]=atoms.elecfield[0]
+        dict_atoms['conf']['elecfield'][1]=atoms.elecfield[1]
+        dict_atoms['conf']['elecfield'][2]=atoms.elecfield[2]
+    if atoms.dpm_present:
+        dict_atoms['conf']['dpm']=[-1 for i in range(3)]
+        dict_atoms['conf']['dpm'][0]=atoms.dpm[0]
+        dict_atoms['conf']['dpm'][1]=atoms.dpm[1]
+        dict_atoms['conf']['dpm'][2]=atoms.dpm[2]
+    if atoms.qpm_present:
+        dict_atoms['conf']['qpm']=[]
+        dict_atoms['conf']['qpm'].append([])
+        dict_atoms['conf']['qpm'][-1].append([])
+        dict_atoms['conf']['qpm'][0]=atoms.qpm[0]
+        dict_atoms['conf']['qpm'].append([])
+        dict_atoms['conf']['qpm'][-1].append([])
+        dict_atoms['conf']['qpm'][1]=atoms.qpm[1]
+        dict_atoms['conf']['qpm'].append([])
+        dict_atoms['conf']['qpm'][-1].append([])
+        dict_atoms['conf']['qpm'][2]=atoms.qpm[2]
+        
     return dict_atoms
 #*****************************************************************************************
 def dict2atoms(dict_atoms):

@@ -14,7 +14,11 @@ SHORT_TESTDIRS = testforces_FD \
 				 minhocao_LTB_fixkpt \
 				 SP_PP_p3d \
 				 SP_PP_p3dbias \
-				 geopt_CENT1_slab_fixed_efield
+				 geopt_CENT1_slab_fixed_efield \
+				 vibfreq_fourpoints \
+				 train_atombased \
+				 train_CENT1 \
+				 train_CENT2
 
 LONG_TESTDIRS = $(SHORT_TESTDIRS)
 

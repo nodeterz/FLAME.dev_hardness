@@ -6,7 +6,7 @@ subroutine minimahopping(parini)
     use mod_minhopp, only: nstep, nlmin, nlminx, ekin, istep, ihopp, kerathopp, ediff, etoler, re_sm, &
         nlmin_old, minter, eref, nbuf, earr, dt, count_md, count_opt, escaped, accepted
     use mod_processors, only: parallel, nproc, iproc, imaster, mpi_comm_abz
-    use mod_atoms, only: typ_atoms, typ_atoms_arr
+    use mod_atoms, only: typ_atoms, typ_atoms_arr, atom_copy
     use mod_opt, only: typ_paropt
     use yaml_output
     !minima hopping program with restart option.
@@ -149,7 +149,7 @@ subroutine init_minimahopping(parini,atoms_curr,atoms_hopp,atoms_allproc,atoms_l
     use mod_minhopp, only: nlmin, alpha_soften, npminx, nstep, alpha1, alpha2, &
         beta1, beta2, beta3, eref, etoler, minter, mdmin, nsoften, nrandoff
     use mod_processors, only: nproc, iproc, imaster, mpi_comm_abz, parallel
-    use mod_atoms, only: typ_atoms, typ_atoms_arr
+    use mod_atoms, only: typ_atoms, typ_atoms_arr, atom_copy, set_ndof
     use mod_opt, only: typ_paropt
     use mod_potential, only: potential
     use yaml_output
@@ -273,7 +273,7 @@ subroutine final_minimahopping(parini,atoms_curr,atoms_hopp,atoms_allproc,atoms_
     use mod_minhopp, only: count_md_tot, count_opt_tot, count_soften_tot, &
         fcall_tot_all, fcall_tot_all_md, fcall_tot_all_opt, fcall_tot_all_soften
     use mod_processors, only: iproc, imaster, mpi_comm_abz, parallel
-    use mod_atoms, only: typ_atoms, typ_atoms_arr
+    use mod_atoms, only: typ_atoms, typ_atoms_arr, atom_deallocate
     use mod_opt, only: typ_paropt
     use mod_potential, only: fcalls
     implicit none
@@ -348,7 +348,7 @@ subroutine relax_minhopp(parini,atoms,paropt_prec,paropt)
     use mod_parini, only: typ_parini
     use mod_minhopp, only: die, count_opt, count_opt_tot, istep
     use mod_opt, only: typ_paropt
-    use mod_atoms, only: typ_atoms
+    use mod_atoms, only: typ_atoms, get_rat, set_rat
     use mod_potential, only: fcalls
     use mod_processors, only: iproc
     implicit none
@@ -375,7 +375,7 @@ subroutine relax_minhopp(parini,atoms,paropt_prec,paropt)
         call minimize(parini,iproc,atoms,paropt_prec)
     endif
     call setpot_geopt
-    rat_tmp(1:3,1:atoms%nat)=atoms%rat(1:3,1:atoms%nat)
+    call get_rat(atoms,rat_tmp)
     !paropt%nitfire=10
     if(parini%trajectory_minhopp) then
         paropt%trajectory=parini%trajectory_minhopp
@@ -385,14 +385,14 @@ subroutine relax_minhopp(parini,atoms,paropt_prec,paropt)
     endif
     call minimize(parini,iproc,atoms,paropt)
     if(.not. paropt%converged) then
-        atoms%rat(1:3,1:atoms%nat)=rat_tmp(1:3,1:atoms%nat)
+        call set_rat(atoms,rat_tmp,setall=.true.)
         paropt_backup=paropt
         if(trim(paropt%approach)=='BFGS'  ) paropt_backup%approach='FIRE'
         if(trim(paropt%approach)=='SDCG'  ) paropt_backup%approach='FIRE'
         if(trim(paropt%approach)=='SDDIIS') paropt_backup%approach='FIRE'
         if(trim(paropt%approach)=='NLBFGS') paropt_backup%approach='FIRE'
         if(trim(paropt%approach)=='FIRE'  ) paropt_backup%approach='SD'
-        rat_tmp(1:3,1:atoms%nat)=atoms%rat(1:3,1:atoms%nat)
+        call get_rat(atoms,rat_tmp)
         if(parini%trajectory_minhopp) then
             paropt_backup%trajectory=parini%trajectory_minhopp
             write(ttfn,'(a9,i3.3,a5,i7.7,a8)') 'traj_proc',iproc,'_step',istep,'_bgo.acf'
@@ -400,7 +400,7 @@ subroutine relax_minhopp(parini,atoms,paropt_prec,paropt)
         endif
         call minimize(parini,iproc,atoms,paropt_backup)
         if(.not. paropt_backup%converged) then
-            atoms%rat(1:3,1:atoms%nat)=rat_tmp(1:3,1:atoms%nat)
+            call set_rat(atoms,rat_tmp,setall=.true.)
             die=.true.
         endif
     endif
@@ -506,7 +506,7 @@ subroutine read_poscur_alborz(atoms_curr,atoms_allproc)
     use mod_interface
     !use mod_minhopp, only: eratallproc
     use mod_processors, only: iproc, nproc, parallel, imaster, mpi_comm_abz
-    use mod_atoms, only: typ_atoms, typ_atoms_arr
+    use mod_atoms, only: typ_atoms, typ_atoms_arr, atom_copy
     implicit none
     type(typ_atoms):: atoms_curr
     type(typ_atoms_arr):: atoms_allproc
@@ -635,6 +635,7 @@ end subroutine read_poscur_alborz
 subroutine read_minhopp_parameters 
     use mod_interface
     use mod_processors, only: iproc, parallel, nproc, imaster, mpi_comm_abz
+    use mod_atoms, only: atom_copy
     use mod_minhopp, only: nrandoff, ediff, ekin, dt, nlmin, nlminx, eref, etoler, ekinarr, &
         dtarr, ediffarr, nstep
     use yaml_output
@@ -719,7 +720,7 @@ end subroutine read_minhopp_parameters
 subroutine minhopp_newrun_initialization(atoms_curr,atoms_locmin)
     use mod_interface
     use mod_minhopp, only: nlmin, nlmin_l, earr, nvisit
-    use mod_atoms, only: typ_atoms, typ_atoms_arr
+    use mod_atoms, only: typ_atoms, typ_atoms_arr, atom_copy
     implicit none
     type(typ_atoms), intent(in):: atoms_curr
     type(typ_atoms_arr), intent(inout):: atoms_locmin
@@ -792,7 +793,7 @@ subroutine send_minimum_to_all(atoms_curr)
     use mod_interface
     use mod_minhopp, only: nbuf, abufall, mtagarr1
     use mod_processors, only: nproc, iproc, mpi_comm_abz
-    use mod_atoms, only: typ_atoms
+    use mod_atoms, only: typ_atoms, get_rat
     implicit none
     type(typ_atoms), intent(in):: atoms_curr
     !local variables
@@ -801,11 +802,7 @@ subroutine send_minimum_to_all(atoms_curr)
     include 'mpif.h'
 #endif
     ibuf=mod(mtagarr1(iproc),nbuf)
-    do iat=1,atoms_curr%nat
-        abufall(3*iat-2,ibuf)=atoms_curr%rat(1,iat)
-        abufall(3*iat-1,ibuf)=atoms_curr%rat(2,iat)
-        abufall(3*iat-0,ibuf)=atoms_curr%rat(3,iat)
-    enddo
+    call get_rat(atoms_curr,abufall(1,ibuf))
     abufall(3*atoms_curr%nat+1,ibuf)=atoms_curr%epot
     itag=mtagarr1(iproc)
 #if defined(MPI)
@@ -825,7 +822,7 @@ subroutine send_minhopp_parameters_to_all(atoms_curr)
     use mod_interface
     use mod_minhopp, only: nbuf, abufall, mtagarr2, ediff, ekin, dt
     use mod_processors, only: nproc, iproc, mpi_comm_abz
-    use mod_atoms, only: typ_atoms
+    use mod_atoms, only: typ_atoms, get_rat
     implicit none
     type(typ_atoms), intent(in):: atoms_curr
     !local variables
@@ -834,11 +831,7 @@ subroutine send_minhopp_parameters_to_all(atoms_curr)
     include 'mpif.h'
 #endif
     ibuf=mod(mtagarr2(iproc),nbuf)
-    do iat=1,atoms_curr%nat
-        abufall(3*iat-2,ibuf)=atoms_curr%rat(1,iat)
-        abufall(3*iat-1,ibuf)=atoms_curr%rat(2,iat)
-        abufall(3*iat-0,ibuf)=atoms_curr%rat(3,iat)
-    enddo
+    call get_rat(atoms_curr,abufall(1,ibuf))
     abufall(3*atoms_curr%nat+1,ibuf)=atoms_curr%epot
     abufall(3*atoms_curr%nat+2,ibuf)=ediff
     abufall(3*atoms_curr%nat+3,ibuf)=ekin
@@ -861,7 +854,7 @@ subroutine mdescape(parini,atoms_hopp)
     use mod_parini, only: typ_parini
     use mod_minhopp, only: av_ekinetic, mdmin, dt, ekin, istep, count_md, count_md_tot, istep
     use mod_processors, only: iproc, nproc
-    use mod_atoms, only: typ_atoms, typ_file_info
+    use mod_atoms, only: typ_atoms, typ_file_info, update_rat, update_ratp
     use mod_potential, only: fcalls
     use yaml_output
     !Does a MD run with the atomic positions in atoms_hopp
@@ -905,14 +898,16 @@ subroutine mdescape(parini,atoms_hopp)
     do imd=1,10000
         !Evolution of the system according to 'VELOCITY VERLET' algorithm
         rkin=0.d0
+        call update_ratp(atoms_hopp)
         do iat=1,atoms_hopp%nat
             tt2=0.5d0*dt**2/atoms_hopp%amass(iat)
-            if(atoms_hopp%bemoved(1,iat)) atoms_hopp%rat(1,iat)=atoms_hopp%rat(1,iat)+dt*atoms_hopp%vat(1,iat)+tt2*fatwa(1,iat)
-            if(atoms_hopp%bemoved(2,iat)) atoms_hopp%rat(2,iat)=atoms_hopp%rat(2,iat)+dt*atoms_hopp%vat(2,iat)+tt2*fatwa(2,iat)
-            if(atoms_hopp%bemoved(3,iat)) atoms_hopp%rat(3,iat)=atoms_hopp%rat(3,iat)+dt*atoms_hopp%vat(3,iat)+tt2*fatwa(3,iat)
+            atoms_hopp%ratp(1,iat)=atoms_hopp%ratp(1,iat)+dt*atoms_hopp%vat(1,iat)+tt2*fatwa(1,iat)
+            atoms_hopp%ratp(2,iat)=atoms_hopp%ratp(2,iat)+dt*atoms_hopp%vat(2,iat)+tt2*fatwa(2,iat)
+            atoms_hopp%ratp(3,iat)=atoms_hopp%ratp(3,iat)+dt*atoms_hopp%vat(3,iat)+tt2*fatwa(3,iat)
             rkin=rkin+atoms_hopp%amass(iat)*(atoms_hopp%vat(1,iat)**2+atoms_hopp%vat(2,iat)**2+atoms_hopp%vat(3,iat)**2)
             !if(int(fcalls)==27) write(*,'(a,f6.2,3f10.5)') 'MASS ',amass(iat),vat(1:3,iat)
         enddo
+        call update_rat(atoms_hopp)
         rkin=rkin*.5d0
         enmin2=enmin1
         enmin1=en0000
@@ -993,7 +988,7 @@ subroutine collect_data_from_all_processors(ntry,atoms_curr,atoms_allproc,atoms_
     use mod_interface
     use mod_processors, only: parallel, iproc
     use mod_minhopp, only: ekinarr, ediffarr, dtarr, dt, ekin, ediff
-    use mod_atoms, only: typ_atoms, typ_atoms_arr
+    use mod_atoms, only: typ_atoms, typ_atoms_arr, atom_copy
     implicit none
     integer, intent(in):: ntry
     type(typ_atoms), intent(in):: atoms_curr
@@ -1060,7 +1055,7 @@ subroutine test_receive(atoms_allproc,atoms_locmin)
     use mod_processors, only: iproc, nproc
     use mod_minhopp, only: nlmin, nlminx, abuf1, abuf2, etoler, earr, re_sm, abuf, mtagarr1, mtagarr2, &
         nvisit, do_req1, do_req2, ireqarr1, ireqarr2, nbuf, ekinarr, ediffarr, dtarr
-    use mod_atoms, only: typ_atoms_arr
+    use mod_atoms, only: typ_atoms_arr, set_rat
     implicit none
     type(typ_atoms_arr), intent(inout):: atoms_allproc, atoms_locmin
     !local variables
@@ -1112,14 +1107,7 @@ subroutine test_receive(atoms_allproc,atoms_locmin)
         endif
         !if(nproc>1) then
         !do iat=1,atoms_allproc%atoms%nat
-        do iat=1,atoms_allproc%atoms(jproc+1)%nat
-            !ratallproc(1,iat,jproc)=abuf2(3*iat-2,jproc)
-            !ratallproc(2,iat,jproc)=abuf2(3*iat-1,jproc)
-            !ratallproc(3,iat,jproc)=abuf2(3*iat-0,jproc)
-            atoms_allproc%atoms(jproc+1)%rat(1,iat)=abuf2(3*iat-2,jproc)
-            atoms_allproc%atoms(jproc+1)%rat(2,iat)=abuf2(3*iat-1,jproc)
-            atoms_allproc%atoms(jproc+1)%rat(3,iat)=abuf2(3*iat-0,jproc)
-        enddo
+        call set_rat(atoms_allproc%atoms(jproc+1),abuf2(1,jproc),setall=.true.)
         !atoms_allproc%epotall(jproc+1)=abuf2(3*atoms_allproc%atoms%nat+1,jproc)
         atoms_allproc%atoms(jproc+1)%epot=abuf2(3*atoms_allproc%atoms(jproc+1)%nat+1,jproc)
         !ediffarr(jproc)=abuf2(3*atoms_allproc%atoms%nat+2,jproc)
@@ -1193,7 +1181,7 @@ subroutine save_low_conf_alborz(atoms,atoms_locmin)
     use mod_interface
     !save configuration if it is among the lowest ones in energy
     use mod_minhopp, only: etoler
-    use mod_atoms, only: typ_atoms, typ_atoms_arr
+    use mod_atoms, only: typ_atoms, typ_atoms_arr, atom_copy
     use mod_processors, only: iproc
     implicit none
     type(typ_atoms), intent(in):: atoms
@@ -1253,7 +1241,7 @@ subroutine velopt(parini,atoms)
     use mod_parini, only: typ_parini
     !assigns velocities according to boltzmann distribution
     use mod_minhopp, only: ekin, ekin, dt, count_soften, count_soften_tot, nsoften !, vdamp
-    use mod_atoms, only: typ_atoms
+    use mod_atoms, only: typ_atoms, update_ratp
     implicit none
     type(typ_parini), intent(in):: parini
     type(typ_atoms), intent(inout):: atoms
@@ -1280,7 +1268,8 @@ subroutine velopt(parini,atoms)
         enddo
     endif
     if(trim(atoms%boundcond)=='free') then
-        call elim_torque_reza_alborz(atoms%nat,atoms%rat,atoms%vat)
+        call update_ratp(atoms)
+        call elim_torque_reza_alborz(atoms%nat,atoms%ratp,atoms%vat)
     endif
     !do iat=1,nat
     !    vat(1,iat)=vat(1,iat)*vdamp(3*iat-2)
@@ -1336,7 +1325,8 @@ subroutine soften(parini,nstep,atoms0,count_soften,count_soften_tot)
     use mod_processors, only: iproc
     use mod_potential, only: fcalls
     use mod_minhopp, only: lprint, alpha_soften, istep
-    use mod_atoms, only: typ_atoms, typ_file_info
+    use mod_atoms, only: typ_atoms, typ_file_info, atom_deallocate, atom_copy
+    use mod_atoms, only: update_ratp, update_rat
     use yaml_output
     implicit none
     type(typ_parini), intent(in):: parini
@@ -1388,15 +1378,14 @@ subroutine soften(parini,nstep,atoms0,count_soften,count_soften_tot)
     atoms0%vat(1:3,1:atoms0%nat)=atoms0%vat(1:3,1:atoms0%nat)/sqrt(svxyz)*eps_vxyz
     call yaml_sequence_open('SOFTEN')
     do iter=1,nstep
-        do i=1,3*atoms0%nat
-            iat=(i-1)/3+1
-            ixyz=mod(i-1,3)+1
-            if(atoms0%bemoved(ixyz,iat)) then
-                atoms%rat(ixyz,iat)=atoms0%rat(ixyz,iat)+atoms0%vat(ixyz,iat)
-            else
-                atoms%rat(ixyz,iat)=atoms0%rat(ixyz,iat)
-            endif
+        call update_ratp(atoms0)
+        write(*,*) atoms0%nat,atoms%nat
+        do iat=1,atoms0%nat
+            atoms%ratp(1,iat)=atoms0%ratp(1,iat)+atoms0%vat(1,iat)
+            atoms%ratp(2,iat)=atoms0%ratp(2,iat)+atoms0%vat(2,iat)
+            atoms%ratp(3,iat)=atoms0%ratp(3,iat)+atoms0%vat(3,iat)
         enddo
+        call update_rat(atoms)
         if(parini%trajectory_minhopp) then
             file_info%file_position='append'
             !call acf_write(file_info,atoms=atoms,strkey='soften')
@@ -1440,21 +1429,24 @@ subroutine soften(parini,nstep,atoms0,count_soften,count_soften_tot)
         endif
         if(atoms%epot-etot0<1.d-3) eps_vxyz=min(1.2d0*eps_vxyz,2.d0*eps_vxyz_init) !used for VASP
         !if(atoms%epot-etot0<1.d-2) eps_vxyz=eps_vxyz*1.1d0 !used for SIESTA
+        call update_ratp(atoms)
+        call update_ratp(atoms0)
         do i=1,3*atoms0%nat
             iat=(i-1)/3+1
             ixyz=mod(i-1,3)+1
             if(atoms0%bemoved(ixyz,iat)) then
-                atoms%rat(ixyz,iat)=atoms%rat(ixyz,iat)+alpha*atoms%fat(ixyz,iat)
-                atoms0%vat(ixyz,iat)=atoms%rat(ixyz,iat)-atoms0%rat(ixyz,iat)
+                atoms%ratp(ixyz,iat)=atoms%ratp(ixyz,iat)+alpha*atoms%fat(ixyz,iat)
+                atoms0%vat(ixyz,iat)=atoms%ratp(ixyz,iat)-atoms0%ratp(ixyz,iat)
             endif
         enddo
+        call update_rat(atoms)
         if(atoms0%ndof==3*atoms0%nat) then
             call elim_moment_alborz(atoms0%nat,atoms0%vat)
         else
             !I am not sure what would be the best to do here.
         endif
         if(trim(atoms0%boundcond)=='free') then
-            call elim_torque_reza_alborz(atoms0%nat,atoms0%rat,atoms0%vat)
+            call elim_torque_reza_alborz(atoms0%nat,atoms0%ratp,atoms0%vat)
         endif
         svxyz=0.d0
         do iat=1,atoms0%nat
@@ -1614,7 +1606,7 @@ subroutine local_minimum_accepted(atoms_hopp,atoms_curr,atoms_locmin)
     use mod_minhopp, only: istep_sam, ekin, ihopp, istep, ediff, istep_old, istep_new, dt, &
         nlmin, nlmin_l, ihopp_acc, alpha1, nvisit, nbuf, kerathopp, newmin, av_ediff, count_md, count_opt
     use mod_processors, only: parallel, iproc
-    use mod_atoms, only: typ_atoms, typ_atoms_arr
+    use mod_atoms, only: typ_atoms, typ_atoms_arr, atom_copy
     implicit none
     type(typ_atoms), intent(in):: atoms_hopp
     type(typ_atoms), intent(inout):: atoms_curr
@@ -1851,7 +1843,7 @@ end subroutine print_final_statistics
 subroutine MPI_atom_arr_copy(nat,atoms_arr)
     use mod_interface
     use mod_processors, only: iproc, nproc, parallel, imaster, mpi_comm_abz
-    use mod_atoms, only: typ_atoms, typ_atoms_arr
+    use mod_atoms, only: typ_atoms, typ_atoms_arr, get_rat, set_rat
     implicit none
     integer,intent(in)::nat
     type(typ_atoms_arr),intent(inout):: atoms_arr
@@ -1862,7 +1854,7 @@ subroutine MPI_atom_arr_copy(nat,atoms_arr)
 #endif
     allocate(ratall(3,nat,atoms_arr%nconf),epotall(1,atoms_arr%nconf),cvall(3,3,atoms_arr%nconf))
     do iconf=1,atoms_arr%nconf
-        ratall(1:3,1:nat,iconf)=atoms_arr%atoms(iconf)%rat
+        call get_rat(atoms_arr%atoms(iconf),ratall(1,1,iconf))
         epotall(1,iconf)=atoms_arr%atoms(iconf)%epot
         cvall(1:3,1:3,iconf)=atoms_arr%atoms(iconf)%cellvec
     enddo
@@ -1874,7 +1866,7 @@ subroutine MPI_atom_arr_copy(nat,atoms_arr)
     do iconf=1,atoms_arr%nconf
         !call atoms_copy(atoms_curr,atoms_arr%atoms(1),'atoms_arr%atoms->atoms_curr')
        ! call atoms_copy(atoms_curr,atoms_arr%atoms(1),'atoms_curr->atoms_arr%atoms')
-        atoms_arr%atoms(iconf)%rat=ratall(1:3,1:nat,iconf)
+        call set_rat(atoms_arr%atoms(iconf),ratall(1,1,iconf),setall=.true.)
         atoms_arr%atoms(iconf)%epot=epotall(1,iconf)
         atoms_arr%atoms(iconf)%cellvec=cvall(1:3,1:3,iconf)
     enddo

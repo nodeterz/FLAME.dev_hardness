@@ -18,7 +18,8 @@ subroutine fit_elecpot(parini)
     use mod_interface
     use mod_parini, only: typ_parini
     use mod_electrostatics, only: typ_poisson
-    use mod_atoms, only: typ_atoms, typ_atoms_arr
+    use mod_atoms, only: typ_atoms, typ_atoms_arr, get_rat, set_rat, update_ratp
+    use mod_atoms, only: atom_copy_old, atom_deallocate, set_rcov, get_rat_iat
     use mod_ann, only: typ_cent, typ_ann_arr
     use yaml_output
     implicit none
@@ -41,14 +42,15 @@ subroutine fit_elecpot(parini)
     real(8),allocatable:: mean_arr(:), std_arr(:)
     real(8) :: B1, B2, h , Be1 , Be2, Beta1, Beta2
     integer :: iter2, iter3, iat
-    real(8) :: dx, dy, dz, dr
+    real(8) :: dx, dy, dz, dr, dxyz(3)
     real(8) :: dpm_err(3), qpm_err(3,3)
     !////////////////////////E.O. TEMP for charge on grid/////////////////////////////////
     pi=4.d0*atan(1.d0)
     nsatur = 5 
     rmse =0.d0
     rmse_old=0.d0
-    open(unit=1,file='poterr')
+    open(unit=3,file='pot.plot')
+    open(unit=4,file='rho.plot')
     !open(unit=2,file='control')
     !open(unit=1377,file='params.txt')
 !//////////////////////////////////////READING INPUT PARAMETERS///////////////////////////
@@ -59,7 +61,8 @@ subroutine fit_elecpot(parini)
     call yaml_map('DFT electric qpm',poisson_dft%qpm(1:3,1:3),fmt='(f10.4)')
     allocate(at_rat(3,atoms%nat),rat(3,atoms%nat),cv_temp(3,3),zat_temp(1:atoms%nat))
     zat_temp=atoms%zat
-    at_rat = atoms%rat ! because acf_read corrupts atoms%rat
+    !at_rat = atoms%rat ! because acf_read corrupts atoms%rat
+    call get_rat(atoms,at_rat)
     hgx = poisson_dft%hgrid(1,1)
     hgy = poisson_dft%hgrid(2,2)
     hgz = poisson_dft%hgrid(3,3)
@@ -78,10 +81,12 @@ subroutine fit_elecpot(parini)
     deallocate(atoms_arr%atoms)
 
     atoms%zat=zat_temp
-    atoms%rat = at_rat
-    rat(1,:) = atoms%rat(1,:)
-    rat(2,:) = atoms%rat(2,:)
-    rat(3,:) = atoms%rat(3,:)
+    !atoms%rat = at_rat
+    call set_rat(atoms,at_rat,setall=.true.)
+    !rat(1,:) = atoms%rat(1,:)
+    !rat(2,:) = atoms%rat(2,:)
+    !rat(3,:) = atoms%rat(3,:)
+    call get_rat(atoms,rat)
     atoms%cellvec=cv_temp
     !read(1377,*) !Number of STO-NG's N
     !read(1377,*) lcn
@@ -220,15 +225,16 @@ subroutine fit_elecpot(parini)
         !write(2,*) 'Cutoff : 2 times of covalent radius is considered for cutoff'
         call yaml_comment('Cutoff is based on exp(-r^4) and covalent radius.')
         call yaml_mapping_open('rcov',flow=.true.)
+        call update_ratp(atoms)
         do i = 1 , atoms%nat
         !write(2,*) 'rcov of ',atoms%sat(i),'is :',atoms%rcov(i)
             call yaml_map(trim(atoms%sat(i)),atoms%rcov(i),fmt='(f6.3)')
             do iz = 1 , nz
-                dz = (hgz*(iz-1)-atoms%rat(3,i))**2
+                dz = (hgz*(iz-1)-atoms%ratp(3,i))**2
                 do iy = 1 , ny
-                    dy = (hgy*(iy-1)-atoms%rat(2,i))**2
+                    dy = (hgy*(iy-1)-atoms%ratp(2,i))**2
                     do ix = 1 , nx
-                        dx = (hgx*(ix-1)-atoms%rat(1,i))**2
+                        dx = (hgx*(ix-1)-atoms%ratp(1,i))**2
                         dr = sqrt(dx+dy+dz)
                         weight(ix,iy,iz) = weight(ix,iy,iz)*(1.d0-exp(-1.d0*(dr/(4.d0*atoms%rcov(i)))**4))
                         !write(55,'(3i4,3es14.6)') ix, iy, iz,dr,exp(-1.d0*(dr/(2.d0*atoms%rcov(i)))**4)
@@ -324,7 +330,9 @@ subroutine fit_elecpot(parini)
             !    write(2,'(a37,a3,i3,i5,i3,es16.7)') 'Atom, Atom_Num, ITER, LCN, APAR : ',atoms%sat(i),i,iter,l,apar(l,i)
             !end do
             call yaml_map('rpar',rpar(1:3,i),fmt='(es15.7)')
-            call yaml_map('dr',rat(1:3,i)-atoms%rat(1:3,i),fmt='(es15.7)')
+            call get_rat_iat(atoms,i,dxyz)
+            dxyz(1:3)=rat(1:3,i)-dxyz(1:3)
+            call yaml_map('dr',dxyz,fmt='(es15.7)')
             !write(2,'(a39,a3,i3,i5,3es16.7)') 'Atom, Atom_Num, ITER, RAT_[X,Y,Z] : ',atoms%sat(i),i,iter,rat(1,i),rat(2,i),rat(3,i)
             !write(2,'(a38,a3,i3,i5,2es16.7)') 'Atom, Atom_Num, ITER, RPAR_X, dx :',atoms%sat(i),i,iter,rpar(1,i),atoms%rat(1,i)-rat(1,i)
             !write(2,'(a38,a3,i3,i5,2es16.7)') 'Atom, Atom_Num, ITER, RPAR_Y, dy :',atoms%sat(i),i,iter,rpar(2,i),atoms%rat(2,i)-rat(2,i)
@@ -379,8 +387,10 @@ subroutine fit_elecpot(parini)
         call cpu_time(finish)
         total_time = total_time + finish - start
         call yaml_map('time of each SD iter',finish-start,fmt='(f6.3)')
-        !write(2,'(a45,f6.3,a45)') "================================ ITER TIME : ",finish-start,"(sec)========================================"
+        write(2,'(a45,f6.3,a45)') "================================ ITER TIME : ",finish-start,"(sec)========================================"
         if(isatur>nsatur) then
+        !call yaml_map('dpm_err_norm',sqrt(sum(dpm_err**2)),fmt='(es14.6)')
+        !if(sqrt(sum(dpm_err**2))<err) then !!! HERE
             call yaml_comment('MAX CONVERSION REACHED',hfill='~')
             !write(*,*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!MAX CONVERSION REACHED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
             !write(2,*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!MAX CONVERSION REACHED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
@@ -441,9 +451,9 @@ subroutine fit_elecpot(parini)
     poisson_cent%rcart(1,1:atoms%nat) = rat(1,1:atoms%nat) - nbgx*hgx     
     poisson_cent%rcart(2,1:atoms%nat) = rat(2,1:atoms%nat) - nbgy*hgy     
     poisson_cent%rcart(3,1:atoms%nat) = rat(3,1:atoms%nat) - nbgz*hgz     
-    poisson_dft%rcart(1,1:atoms%nat) = rat(1,1:atoms%nat)  - nbgx*hgx     
-    poisson_dft%rcart(2,1:atoms%nat) = rat(2,1:atoms%nat)  - nbgy*hgy     
-    poisson_dft%rcart(3,1:atoms%nat) = rat(3,1:atoms%nat)  - nbgz*hgz     
+    poisson_dft%rcart(1,1:atoms%nat)  = atoms%ratp(1,1:atoms%nat)  - nbgx*hgx     
+    poisson_dft%rcart(2,1:atoms%nat)  = atoms%ratp(2,1:atoms%nat)  - nbgy*hgy     
+    poisson_dft%rcart(3,1:atoms%nat)  = atoms%ratp(3,1:atoms%nat)  - nbgz*hgz     
     poisson_dft%rho = dft_rho
     poisson_cent%reset_rho = .True.
     poisson_cent%q = Q(1,1:atoms%nat)
@@ -473,12 +483,11 @@ subroutine fit_elecpot(parini)
     qpm_err(1:3,1:3)=poisson_cent%qpm(1:3,1:3)-poisson_dft%qpm(1:3,1:3)
     call yaml_map('dpm_err (FINAL)',dpm_err,fmt='(f10.4)')
     call yaml_map('qpm_err (FINAL)',qpm_err(1:3,1:3),fmt='(f10.4)')
-    !call calc_multipoles_grid_cent2(parini,atoms,poisson_cent)
-
     poisson_cent%rho=-1.d0*poisson_cent%rho
     call cube_write('cent_rho.cube',atoms,poisson_cent,'rho')
     poisson_cent%rho=-1.d0*poisson_cent%rho
     call get_hartree(parini,poisson_cent,atoms,Q(1,1:atoms%nat),ehartree)
+    call get_hartree(parini,poisson_dft,atoms,Q(1,1:atoms%nat),ehartree)
     cent_ener = ehartree
     call yaml_mapping_open('energy',flow=.true.)
     call yaml_map('CENT',cent_ener,fmt='(es15.7)')
@@ -486,51 +495,9 @@ subroutine fit_elecpot(parini)
     call yaml_map('dE',cent_ener-dft_ener,fmt='(es15.7)')
     call yaml_map('dE percent',(cent_ener-dft_ener)*100.d0/dft_ener,fmt='(es15.7)')
     call yaml_mapping_close()
-    !write(2,'(a,4es14.6)') 'CENT energy , DFT energy , Energy difference , Err Percentage : ' , cent_ener , dft_ener , cent_ener-dft_ener,(cent_ener-dft_ener)*100.d0/dft_ener
+
     poisson_dft%q=atoms%zat
     poisson_cent%q=atoms%zat
-    !if (atoms_type > 2) stop('atoms type is more than 2')
-    !read(1377,*) !"h , B1 , B2 , iter2 , iter3"
-    !read(1377,*) h , Be1 , Be2 , iter2 , iter3
-    !B1 = Be1 
-    !B2 = Be2
-    !temp1 = 100.d0
-    !do j = 1 , iter2
-    !    B1 = B1 + h
-    !    B2 = Be2 - h
-    !    do k = 1 , iter3
-    !        B2 = B2 + h 
-    !        atoms%fat = 0.d0
-    !        poisson_dft%gw_ewald(1:t_num(1)) = B1
-    !        poisson_dft%gw_ewald(t_num(1)+1:t_num(1)+t_num(2)) = B2
-    !        call get_hartree_force(parini,poisson_dft,atoms)
-    !        dft_fat = atoms%fat
-    !        if (total_force_dft < temp1) then
-    !            temp1 = total_force_dft
-    !            Beta1 = B1
-    !            Beta2 = B2
-    !        endif
-    !        write(77,'(5es14.6)') B1 , B2 , abs(sum(dft_fat(1,:))), abs(sum(dft_fat(2,:))), abs(sum(dft_fat(3,:)))
-    !    enddo
-    !enddo
-    !B1 = Be1
-    !B2 = Be2
-    !do j = 1 , iter2
-    !    B1 = B1 + h
-    !    B2 = Be2 - h
-    !    do k = 1 , iter3
-    !        B2 = B2 + h 
-    !        atoms%fat = 0.d0
-    !        poisson_cent%gw_ewald(1:t_num(1)) = B1
-    !        poisson_cent%gw_ewald(t_num(1)+1:t_num(1)+t_num(2)) = B2
-    !        call get_hartree_force(parini,poisson_cent,atoms)
-    !        cent_fat = atoms%fat
-    !        write(88,'(5es14.6)') B1 , B2 , abs(sum(cent_fat(1,:))), abs(sum(cent_fat(2,:))), abs(sum(cent_fat(3,:)))
-    !    enddo
-    !enddo
-    !atoms%fat = 0.d0
-    !poisson_dft%gw_ewald(1:t_num(1)) = Beta1
-    !poisson_dft%gw_ewald(t_num(1)+1:t_num(1)+t_num(2)) = Beta2
     poisson_dft%gw_ewald = 0.5d0
     poisson_cent%gw_ewald=poisson_dft%gw_ewald
     call get_hartree_force(parini,poisson_dft,atoms)
