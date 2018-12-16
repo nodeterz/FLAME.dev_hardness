@@ -46,6 +46,7 @@ subroutine ann_train(parini)
     type(typ_symfunc_arr), target:: symfunc_valid
     real(8):: time1, time2, time3
     logical:: file_exists
+    integer :: iconf
     call f_routine(id='ann_train')
     !-------------------------------------------------------
     !Reading configurations and their energies and forces
@@ -134,6 +135,10 @@ subroutine ann_train(parini)
         write(*,*) 'ERROR: unknown optimzer in ANN training'
     endif
 
+    do iconf = 1 , atoms_train_t%nconf
+        write(*,*) iconf
+        call get_qat_from_dpm(parini,ann_arr,atoms_train_t%atoms(iconf),iconf)
+    enddo
     if(iproc==0) then
         if( ann_arr%exists_yaml_file) then
             call write_ann_all_yaml(parini,ann_arr,-1)
@@ -1364,4 +1369,111 @@ subroutine ann_evaluate(parini,iter,ann_arr,symfunc_arr,atoms_arr,data_set)
     endif
     ann_arr%compute_symfunc=.false.
 end subroutine ann_evaluate
+!*****************************************************************************************
+subroutine get_qat_from_dpm(parini,ann_arr,atoms,iconf)
+    use mod_interface
+    use mod_parini, only: typ_parini
+    use mod_ann, only: typ_ann_arr, typ_cent
+    use mod_atoms, only: typ_atoms, get_rat
+    implicit none
+    type(typ_parini), intent(in):: parini
+    type(typ_ann_arr), intent(inout):: ann_arr
+    type(typ_atoms), intent(inout):: atoms
+    !local variables
+    integer:: info, iat, jat, jel, nat, k , kp , i, j,iconf
+    real(8):: qtot_ion, hardness, dx, dy, dz, r, tt, gama, beta_iat, beta_jat, pi, tt1, ttg, c_fun
+    real(8):: a(1:atoms%nat+1,1:atoms%nat+1),rat(1:3,1:atoms%nat),zat(1:atoms%nat),qat(1:atoms%nat+1),dpm(1:3)
+    real(8):: amat(1:atoms%nat,1:atoms%nat),chi(1:atoms%nat)
+    pi=4.d0*atan(1.d0) 
+    call get_rat(atoms,rat)
+    nat = atoms%nat
+    zat=atoms%zat(1:nat)
+    dpm(1)=atoms%dpm(1)
+    dpm(2)=atoms%dpm(2)
+    dpm(3)=atoms%dpm(3)
+    a(1:nat+1,1:nat+1) = 0.d0
+    a(nat+1,1:nat)=1
+    a(1:nat,nat+1)=1
+    do iat = 1 , nat
+        do jat = iat , nat
+            a(iat,jat)=a(iat,jat)+2.d0*(rat(1,iat)+rat(2,iat)+rat(3,iat))*(rat(1,jat)+rat(2,jat)+rat(3,jat))
+            a(jat,iat)=a(iat,jat)
+        enddo
+    enddo
+    !do iat = 1 , nat
+    !    do jat = 1 , nat
+    !        if (abs(a(iat,jat))<1.d-5) then 
+    !            write(*,*) iat,jat , rat(1,iat),rat(2,iat),rat(3,iat) , rat(1,jat),rat(2,jat),rat(3,jat)
+    !            write(*,*) a(iat,jat)
+    !        end if
+    !    end do
+    !end do
+    qat(1:nat+1)=0.d0
+    do iat = 1 , nat
+        do jat = 1 , nat
+            qat(iat)=(rat(1,jat)+rat(2,jat)+rat(3,jat))*zat(jat)
+        enddo
+        qat(iat)= qat(iat)+(dpm(1)+dpm(2)+dpm(3))
+        qat(iat)=2.d0*(rat(1,iat)+rat(2,iat)+rat(3,iat))*qat(iat)
+    enddo
+    
+       ! do iat=1,nat+1
+       !     write(*,'(21es14.6)') a(iat,1:nat+1)
+       ! enddo
+       ! write(*,*) '------------------------------------'
+    call DGETRF(nat+1,nat+1,a,nat+1,ann_arr%ipiv,info)
+    if(info/=0) then
+       ! do iat=1,nat+1
+       !     write(*,'(21es14.6)') a(iat,1:nat+1)
+       ! enddo
+       ! write(*,*) a(info,info)
+       ! write(*,*) rat(1:3,info)
+        write(*,'(a,i,a,i)') 'ERROR: DGETRF info=',info,' for configuration : ',iconf
+        stop
+    endif
+    call DGETRS('N',nat+1,1,a,nat+1,ann_arr%ipiv,qat,nat+1,info)
+    if(info/=0) then
+        write(*,'(a,i,a,i)') 'ERROR: DGETRS info=',info,' for configuration : ',iconf
+        stop
+    endif
+    write(77,'(a,20f10.5)') 'qat : ', qat(1:nat)
+    write(77,'(i5,a,f10.5,a,f10.5,a,f10.5)') iconf,'  max_qat : ', maxval(qat(1:nat)), '  min_qat : ', minval(qat(1:nat)),'  qat_var : ', maxval(qat(1:nat))-minval(qat(1:nat))
+    c_fun=0.d0
+    tt=0.d0
+    do iat = 1 ,nat
+        tt=tt+(zat(iat)+qat(iat))*(rat(1,iat)+rat(2,iat)+rat(3,iat))
+    enddo
+    c_fun=(tt-dpm(1)-dpm(2)-dpm(3))**2
+    write(77,'(a,es24.6)')'Cost_function : ' , c_fun
+!----------------E.O. calculation of q -------------------
+    do iat=1,nat
+        beta_iat=ann_arr%ann(atoms%itypat(iat))%gausswidth
+        gama=1.d0/sqrt(beta_iat**2+beta_iat**2)
+        amat(iat,iat)=gama*2.d0/sqrt(pi)+ann_arr%ann(atoms%itypat(iat))%hardness
+        do jat=iat+1,nat
+            dx=rat(1,jat)-rat(1,iat)
+            dy=rat(2,jat)-rat(2,iat)
+            dz=rat(3,jat)-rat(3,iat)
+            r=sqrt(dx*dx+dy*dy+dz*dz)
+            beta_jat=ann_arr%ann(atoms%itypat(jat))%gausswidth
+            gama=1.d0/sqrt(beta_iat**2+beta_jat**2)
+            amat(iat,jat)=erf(gama*r)/r
+            amat(jat,iat)=amat(iat,jat)
+        enddo
+    enddo
+    chi(1:nat)=0.d0
+    do iat = 1 , nat
+        do jat = 1 , nat
+            chi(iat)=chi(iat)-amat(iat,jat)*qat(jat)
+        enddo
+    enddo    
+    write(77,'(a,20f10.5)') 'chi : ',chi(1:nat)
+    write(77,'(i5,a,f10.5,a,f10.5,a,f10.5)') iconf,'  max_chi : ', maxval(chi(1:nat)), '  min_chi : ', minval(chi(1:nat)),'  chi_var : ',maxval(chi(1:nat))-minval(chi(1:nat))
+    write(77,'(a)') '!------------------------------------------------------------------------------------------!'
+!-----------------Just a guess--------------------------
+!    do iat=1,nat
+!        hardness=ann_arr%ann(atoms%itypat(iat))%hardness
+!        chi(iat)=chi(iat)+hardness*(atoms%zat(iat))
+!    enddo
+end subroutine get_qat_from_dpm
 !*****************************************************************************************
