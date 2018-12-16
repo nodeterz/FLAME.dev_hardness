@@ -138,6 +138,7 @@ subroutine ann_train(parini)
     do iconf = 1 , atoms_train_t%nconf
         write(*,*) iconf
         call get_qat_from_dpm(parini,ann_arr,atoms_train_t%atoms(iconf),iconf)
+        write(66,'(20es14.6)') atoms_train_t%atoms(iconf)%zat(1:atoms_train_t%atoms(iconf)%nat)
     enddo
     if(iproc==0) then
         if( ann_arr%exists_yaml_file) then
@@ -1383,11 +1384,14 @@ subroutine get_qat_from_dpm(parini,ann_arr,atoms,iconf)
     integer:: info, iat, jat, jel, nat, k , kp , i, j,iconf
     real(8):: qtot_ion, hardness, dx, dy, dz, r, tt, gama, beta_iat, beta_jat, pi, tt1, ttg, c_fun
     real(8):: a(1:atoms%nat+1,1:atoms%nat+1),rat(1:3,1:atoms%nat),zat(1:atoms%nat),qat(1:atoms%nat+1),dpm(1:3)
-    real(8):: amat(1:atoms%nat,1:atoms%nat),chi(1:atoms%nat)
+    real(8):: amat(1:atoms%nat,1:atoms%nat),chi(1:atoms%nat),tt2(1:3)
     pi=4.d0*atan(1.d0) 
-    call get_rat(atoms,rat)
     nat = atoms%nat
-    zat=atoms%zat(1:nat)
+    zat(1:nat)=atoms%zat(1:nat)
+    !write(55,'(20es14.6)') atoms%zat(1:nat)
+    write(55,'(20es14.6)') atoms%zat(1:atoms%nat)
+!    zat(1:nat)=4.d0
+    call get_rat(atoms,rat)
     dpm(1)=atoms%dpm(1)
     dpm(2)=atoms%dpm(2)
     dpm(3)=atoms%dpm(3)
@@ -1396,8 +1400,10 @@ subroutine get_qat_from_dpm(parini,ann_arr,atoms,iconf)
     a(1:nat,nat+1)=1
     do iat = 1 , nat
         do jat = iat , nat
-            a(iat,jat)=a(iat,jat)+2.d0*(rat(1,iat)+rat(2,iat)+rat(3,iat))*(rat(1,jat)+rat(2,jat)+rat(3,jat))
-            a(jat,iat)=a(iat,jat)
+            do k = 1 , 3
+                a(iat,jat)=a(iat,jat)+2.d0*(rat(k,iat)*rat(k,jat))
+                a(jat,iat)=a(iat,jat)
+            end do
         enddo
     enddo
     !do iat = 1 , nat
@@ -1408,13 +1414,17 @@ subroutine get_qat_from_dpm(parini,ann_arr,atoms,iconf)
     !        end if
     !    end do
     !end do
-    qat(1:nat+1)=0.d0
+    qat(1:nat+1)=atoms%qtot
     do iat = 1 , nat
+        tt2(1:3)=0.d0
         do jat = 1 , nat
-            qat(iat)=(rat(1,jat)+rat(2,jat)+rat(3,jat))*zat(jat)
+            do k = 1 , 3
+                tt2(k)=tt2(k)+rat(k,jat)*zat(jat)
+            enddo
         enddo
-        qat(iat)= qat(iat)+(dpm(1)+dpm(2)+dpm(3))
-        qat(iat)=2.d0*(rat(1,iat)+rat(2,iat)+rat(3,iat))*qat(iat)
+        do k = 1 , 3
+            qat(iat)= qat(iat)-2.d0*rat(k,iat)*(tt2(k)-dpm(k))
+        enddo
     enddo
     
        ! do iat=1,nat+1
@@ -1469,11 +1479,26 @@ subroutine get_qat_from_dpm(parini,ann_arr,atoms,iconf)
     enddo    
     write(77,'(a,20f10.5)') 'chi : ',chi(1:nat)
     write(77,'(i5,a,f10.5,a,f10.5,a,f10.5)') iconf,'  max_chi : ', maxval(chi(1:nat)), '  min_chi : ', minval(chi(1:nat)),'  chi_var : ',maxval(chi(1:nat))-minval(chi(1:nat))
+    write(77,'(i5,a,3f10.5,a)') iconf,'  dpm : [ ', dpm(1),dpm(2),dpm(3),' ]'
+    do iat=1,nat
+        hardness=ann_arr%ann(atoms%itypat(iat))%hardness
+        chi(iat)=chi(iat)+hardness*(zat(iat))
+    enddo
+    do jat=1,nat !summation over electrons
+        tt=0.d0
+        do iat=1,nat !summation over ions
+            beta_iat=ann_arr%ann(atoms%itypat(iat))%gausswidth
+            beta_jat=ann_arr%ann(atoms%itypat(iat))%gausswidth_ion
+            gama=1.d0/sqrt(beta_iat**2+beta_jat**2)
+            call erf_over_r_taylor(0.d0,tt1,ttg)
+            tt=tt-zat(iat)*(tt1*gama)
+        enddo
+        write(*,'(5es14.6)') tt1,zat(jat),tt1*gama,tt,ann_arr%ann(atoms%itypat(iat))%hardness*zat(jat)
+        chi(jat)=chi(jat)-tt
+    enddo
+    write(77,'(a,20f10.5)') 'chi : ',chi(1:nat)
+    write(77,'(i5,a,f10.5,a,f10.5,a,f10.5)') iconf,'  max_chi : ', maxval(chi(1:nat)), '  min_chi : ', minval(chi(1:nat)),'  chi_var : ',maxval(chi(1:nat))-minval(chi(1:nat))
+    write(77,'(i5,a,3f10.5,a)') iconf,'  dpm : [ ', dpm(1),dpm(2),dpm(3),' ]'
     write(77,'(a)') '!------------------------------------------------------------------------------------------!'
-!-----------------Just a guess--------------------------
-!    do iat=1,nat
-!        hardness=ann_arr%ann(atoms%itypat(iat))%hardness
-!        chi(iat)=chi(iat)+hardness*(atoms%zat(iat))
-!    enddo
 end subroutine get_qat_from_dpm
 !*****************************************************************************************
