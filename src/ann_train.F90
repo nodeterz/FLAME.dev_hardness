@@ -119,6 +119,9 @@ subroutine ann_train(parini)
     if(trim(parini%approach_ann)=='cent2' .and. parini%prefit_cent2_ann) then
         call cent2_simplex(parini,ann_arr,atoms_smplx,opt_ann)
     endif
+    do iconf = 1 , atoms_train%nconf
+        call get_qat_from_dpm(parini,ann_arr,atoms_train%atoms(iconf),iconf)
+    enddo
     atoms_train_t=>atoms_train
     atoms_valid_t=>atoms_valid
     symfunc_train_t=>symfunc_train
@@ -135,11 +138,6 @@ subroutine ann_train(parini)
         write(*,*) 'ERROR: unknown optimzer in ANN training'
     endif
 
-    do iconf = 1 , atoms_train_t%nconf
-        write(*,*) iconf
-        call get_qat_from_dpm(parini,ann_arr,atoms_train_t%atoms(iconf),iconf)
-        write(66,'(20es14.6)') atoms_train_t%atoms(iconf)%zat(1:atoms_train_t%atoms(iconf)%nat)
-    enddo
     if(iproc==0) then
         if( ann_arr%exists_yaml_file) then
             call write_ann_all_yaml(parini,ann_arr,-1)
@@ -1382,29 +1380,36 @@ subroutine get_qat_from_dpm(parini,ann_arr,atoms,iconf)
     type(typ_atoms), intent(inout):: atoms
     !local variables
     integer:: info, iat, jat, jel, nat, k , kp , i, j,iconf
-    real(8):: qtot_ion, hardness, dx, dy, dz, r, tt, gama, beta_iat, beta_jat, pi, tt1, ttg, c_fun
-    real(8):: a(1:atoms%nat+1,1:atoms%nat+1),rat(1:3,1:atoms%nat),zat(1:atoms%nat),qat(1:atoms%nat+1),dpm(1:3)
-    real(8):: amat(1:atoms%nat,1:atoms%nat),chi(1:atoms%nat),tt2(1:3)
+    real(8):: qtot_ion, hardness, dx, dy, dz, r, tt, gama, beta_iat, beta_jat, pi, tt1, ttg, error
+    real(8):: a(1:atoms%nat+1,1:atoms%nat+1),rat(1:3,1:atoms%nat),qat(1:atoms%nat+1),dpm(1:3)
+    real(8):: amat(1:atoms%nat,1:atoms%nat),chi(1:atoms%nat),tt2(1:3),q_t(1:atoms%nat)
+    real(8):: qtarget
+    real(8):: max_chi_Si , max_chi_Mg , max_chi_O , min_chi_Si , min_chi_Mg , min_chi_O , max_qat_Si , max_qat_Mg , max_qat_O , min_qat_Si , min_qat_Mg , min_qat_O 
+    integer:: ngwe,igwe,ngwi,igwi,nhard,ihard
+    ngwe = 2
+    ngwi = 2
+    nhard= 2  
     pi=4.d0*atan(1.d0) 
     nat = atoms%nat
-    zat(1:nat)=atoms%zat(1:nat)
-    !write(55,'(20es14.6)') atoms%zat(1:nat)
-    write(55,'(20es14.6)') atoms%zat(1:atoms%nat)
-!    zat(1:nat)=4.d0
+    do iat=1,atoms%nat
+        atoms%zat(iat)=ann_arr%ann(atoms%itypat(iat))%zion
+    enddo
     call get_rat(atoms,rat)
     dpm(1)=atoms%dpm(1)
     dpm(2)=atoms%dpm(2)
     dpm(3)=atoms%dpm(3)
-    a(1:nat+1,1:nat+1) = 0.d0
     a(nat+1,1:nat)=1
     a(1:nat,nat+1)=1
+    a(nat+1,nat+1)=0
     do iat = 1 , nat
         do jat = iat , nat
-            do k = 1 , 3
-                a(iat,jat)=a(iat,jat)+2.d0*(rat(k,iat)*rat(k,jat))
-                a(jat,iat)=a(iat,jat)
-            end do
+            a(iat,jat)=2.d0*(rat(1,iat)*rat(1,jat)+rat(2,iat)*rat(2,jat)+rat(3,iat)*rat(3,jat))
+            a(jat,iat)=a(iat,jat)
         enddo
+        !hardness=ann_arr%ann(atoms%itypat(iat))%hardness
+        hardness=1.d0
+        a(iat,iat)=a(iat,iat)+2.d0*hardness
+        write(66,*)'hard',iat,hardness
     enddo
     !do iat = 1 , nat
     !    do jat = 1 , nat
@@ -1414,30 +1419,29 @@ subroutine get_qat_from_dpm(parini,ann_arr,atoms,iconf)
     !        end if
     !    end do
     !end do
-    qat(1:nat+1)=atoms%qtot
+    qat(nat+1)=atoms%qtot-sum(atoms%zat(1:nat))
+    qat(1:nat)=0.d0
+    !write(*,*) 'qtot_rzx ', atoms%qtot ,  qat(nat+1), nat
     do iat = 1 , nat
-        tt2(1:3)=0.d0
+        tt2(1)=0.d0 ; tt2(2)=0.d0 ; tt2(3)=0.d0
         do jat = 1 , nat
-            do k = 1 , 3
-                tt2(k)=tt2(k)+rat(k,jat)*zat(jat)
-            enddo
+            tt2(1)=tt2(1)+rat(1,jat)*atoms%zat(jat)
+            tt2(2)=tt2(2)+rat(2,jat)*atoms%zat(jat)
+            tt2(3)=tt2(3)+rat(3,jat)*atoms%zat(jat)
         enddo
-        do k = 1 , 3
-            qat(iat)= qat(iat)-2.d0*rat(k,iat)*(tt2(k)-dpm(k))
-        enddo
+        qat(iat)=-2.d0*(rat(1,iat)*(tt2(1)-dpm(1))+ &
+                        rat(2,iat)*(tt2(2)-dpm(2))+ &
+                        rat(3,iat)*(tt2(3)-dpm(3)))
+        if(trim(atoms%sat(iat))=='Si') qtarget= 0.d0
+        if(trim(atoms%sat(iat))=='Mg') qtarget= 2.d0
+        if(trim(atoms%sat(iat))=='O' ) qtarget=-2.d0
+        !hardness=ann_arr%ann(atoms%itypat(iat))%hardness
+        hardness=1.d0
+        qat(iat)=qat(iat)-2.d0*hardness*(atoms%zat(iat)-qtarget)
     enddo
-    
-       ! do iat=1,nat+1
-       !     write(*,'(21es14.6)') a(iat,1:nat+1)
-       ! enddo
        ! write(*,*) '------------------------------------'
     call DGETRF(nat+1,nat+1,a,nat+1,ann_arr%ipiv,info)
     if(info/=0) then
-       ! do iat=1,nat+1
-       !     write(*,'(21es14.6)') a(iat,1:nat+1)
-       ! enddo
-       ! write(*,*) a(info,info)
-       ! write(*,*) rat(1:3,info)
         write(*,'(a,i,a,i)') 'ERROR: DGETRF info=',info,' for configuration : ',iconf
         stop
     endif
@@ -1446,59 +1450,134 @@ subroutine get_qat_from_dpm(parini,ann_arr,atoms,iconf)
         write(*,'(a,i,a,i)') 'ERROR: DGETRS info=',info,' for configuration : ',iconf
         stop
     endif
-    write(77,'(a,20f10.5)') 'qat : ', qat(1:nat)
-    write(77,'(i5,a,f10.5,a,f10.5,a,f10.5)') iconf,'  max_qat : ', maxval(qat(1:nat)), '  min_qat : ', minval(qat(1:nat)),'  qat_var : ', maxval(qat(1:nat))-minval(qat(1:nat))
-    c_fun=0.d0
-    tt=0.d0
+    !write(77,'(16a)')atoms%sat(1:nat)
+    !write(77,'(a,20f10.5)') 'qat : ', atoms%zat(1:nat)+qat(1:nat)
+    q_t(1:nat)=atoms%zat(1:nat)+qat(1:nat)
+   ! write(77,'(i5,a,f10.5,a,f10.5,a,f10.5)') iconf,'  max_qat : ', &
+   !     maxval(atoms%zat(1:nat)+qat(1:nat)), '  min_qat : ', &
+   !     minval(atoms%zat(1:nat)+qat(1:nat)),'  qat_var : ', &
+   !     maxval(atoms%zat(1:nat)+qat(1:nat))-minval(atoms%zat(1:nat)+qat(1:nat))
+    error=0.d0
+    tt2(1)=0.d0 ; tt2(2)=0.d0 ; tt2(3)=0.d0
     do iat = 1 ,nat
-        tt=tt+(zat(iat)+qat(iat))*(rat(1,iat)+rat(2,iat)+rat(3,iat))
+        tt2(1)=tt2(1)+(atoms%zat(iat)+qat(iat))*rat(1,iat)
+        tt2(2)=tt2(2)+(atoms%zat(iat)+qat(iat))*rat(2,iat)
+        tt2(3)=tt2(3)+(atoms%zat(iat)+qat(iat))*rat(3,iat)
     enddo
-    c_fun=(tt-dpm(1)-dpm(2)-dpm(3))**2
-    write(77,'(a,es24.6)')'Cost_function : ' , c_fun
+    error=(tt2(1)-dpm(1))**2+(tt2(2)-dpm(2))**2+(tt2(3)-dpm(3))**2
+    error=sqrt(error)
+   ! write(77,'(a,es24.6)') 'Error : ',error
+   ! write(77,'(a)') '!------------------------------------------------------------------------------------------!'
 !----------------E.O. calculation of q -------------------
-    do iat=1,nat
-        beta_iat=ann_arr%ann(atoms%itypat(iat))%gausswidth
-        gama=1.d0/sqrt(beta_iat**2+beta_iat**2)
-        amat(iat,iat)=gama*2.d0/sqrt(pi)+ann_arr%ann(atoms%itypat(iat))%hardness
-        do jat=iat+1,nat
-            dx=rat(1,jat)-rat(1,iat)
-            dy=rat(2,jat)-rat(2,iat)
-            dz=rat(3,jat)-rat(3,iat)
-            r=sqrt(dx*dx+dy*dy+dz*dz)
-            beta_jat=ann_arr%ann(atoms%itypat(jat))%gausswidth
-            gama=1.d0/sqrt(beta_iat**2+beta_jat**2)
-            amat(iat,jat)=erf(gama*r)/r
-            amat(jat,iat)=amat(iat,jat)
-        enddo
-    enddo
-    chi(1:nat)=0.d0
-    do iat = 1 , nat
-        do jat = 1 , nat
-            chi(iat)=chi(iat)-amat(iat,jat)*qat(jat)
-        enddo
-    enddo    
-    write(77,'(a,20f10.5)') 'chi : ',chi(1:nat)
-    write(77,'(i5,a,f10.5,a,f10.5,a,f10.5)') iconf,'  max_chi : ', maxval(chi(1:nat)), '  min_chi : ', minval(chi(1:nat)),'  chi_var : ',maxval(chi(1:nat))-minval(chi(1:nat))
-    write(77,'(i5,a,3f10.5,a)') iconf,'  dpm : [ ', dpm(1),dpm(2),dpm(3),' ]'
-    do iat=1,nat
-        hardness=ann_arr%ann(atoms%itypat(iat))%hardness
-        chi(iat)=chi(iat)+hardness*(zat(iat))
-    enddo
-    do jat=1,nat !summation over electrons
-        tt=0.d0
-        do iat=1,nat !summation over ions
-            beta_iat=ann_arr%ann(atoms%itypat(iat))%gausswidth
-            beta_jat=ann_arr%ann(atoms%itypat(iat))%gausswidth_ion
-            gama=1.d0/sqrt(beta_iat**2+beta_jat**2)
-            call erf_over_r_taylor(0.d0,tt1,ttg)
-            tt=tt-zat(iat)*(tt1*gama)
-        enddo
-        write(*,'(5es14.6)') tt1,zat(jat),tt1*gama,tt,ann_arr%ann(atoms%itypat(iat))%hardness*zat(jat)
-        chi(jat)=chi(jat)-tt
-    enddo
-    write(77,'(a,20f10.5)') 'chi : ',chi(1:nat)
-    write(77,'(i5,a,f10.5,a,f10.5,a,f10.5)') iconf,'  max_chi : ', maxval(chi(1:nat)), '  min_chi : ', minval(chi(1:nat)),'  chi_var : ',maxval(chi(1:nat))-minval(chi(1:nat))
-    write(77,'(i5,a,3f10.5,a)') iconf,'  dpm : [ ', dpm(1),dpm(2),dpm(3),' ]'
-    write(77,'(a)') '!------------------------------------------------------------------------------------------!'
+    do igwe = 1 , ngwe
+        do igwi = 1 , ngwi
+            do ihard = 1 , nhard 
+                do iat=1,nat
+                    beta_iat=5.d-1*ann_arr%ann(atoms%itypat(iat))%gausswidth+real(igwe,8)/real(ngwe,8)*ann_arr%ann(atoms%itypat(iat))%gausswidth
+                    gama=1.d0/sqrt(beta_iat**2+beta_iat**2)
+                    write(44,*) gama*2.d0/sqrt(pi)
+                    amat(iat,iat)=gama*2.d0/sqrt(pi)+ann_arr%ann(atoms%itypat(iat))%hardness !+1.d0*(atoms%zat(iat)+qat(iat))**2
+                    do jat=iat+1,nat
+                        dx=rat(1,jat)-rat(1,iat)
+                        dy=rat(2,jat)-rat(2,iat)
+                        dz=rat(3,jat)-rat(3,iat)
+                        r=sqrt(dx*dx+dy*dy+dz*dz)
+                        beta_jat=5.d-1*ann_arr%ann(atoms%itypat(jat))%gausswidth+real(igwe,8)/real(ngwe,8)*ann_arr%ann(atoms%itypat(jat))%gausswidth
+                        gama=1.d0/sqrt(beta_iat**2+beta_jat**2)
+                        amat(iat,jat)=erf(gama*r)/r
+                        amat(jat,iat)=amat(iat,jat)
+                    enddo
+                enddo
+                chi(1:nat)=0.d0
+                do iat = 1 , nat
+                    tt=0.d0
+                    do jat = 1 , nat
+                        tt=tt+amat(iat,jat)*qat(jat)
+                    enddo
+                    chi(iat)=tt
+                enddo    
+                do iat=1,nat
+                    hardness=5.d-1*ann_arr%ann(atoms%itypat(iat))%hardness+real(ihard,8)/real(nhard,8)*ann_arr%ann(atoms%itypat(iat))%hardness
+                    chi(iat)=chi(iat)+hardness*(atoms%zat(iat))
+                enddo
+                do iat=1,atoms%nat !summation over ions
+                    tt=0.d0
+                    do jat=1,atoms%nat !summation over electrons
+                        dx=rat(1,jat)-rat(1,iat)
+                        dy=rat(2,jat)-rat(2,iat)
+                        dz=rat(3,jat)-rat(3,iat)
+                        r=sqrt(dx*dx+dy*dy+dz*dz)
+                        beta_iat=5.d-1*ann_arr%ann(atoms%itypat(iat))%gausswidth_ion+real(igwi,8)/real(ngwi,8)*ann_arr%ann(atoms%itypat(iat))%gausswidth_ion
+                        beta_jat=5.d-1*ann_arr%ann(atoms%itypat(iat))%gausswidth+real(igwe,8)/real(ngwe,8)*ann_arr%ann(atoms%itypat(iat))%gausswidth
+                        gama=1.d0/sqrt(beta_iat**2+beta_jat**2)
+                        if(r<0.1d0) then
+                            call erf_over_r_taylor(gama*r,tt1,ttg)
+                            tt=tt+atoms%zat(iat)*(tt1*gama)
+                        else
+                            tt=tt+atoms%zat(iat)*erf(gama*r)/r
+                        endif
+                    enddo
+                    chi(iat)=chi(iat)+tt
+                    !chi(iat)=tt
+                enddo
+                do iat=1,atoms%nat !summation over ions
+                    chi(iat)=-chi(iat)
+                enddo
+                tt=sum(chi(1:nat))/nat
+                do iat=1,atoms%nat !summation over ions
+                    chi(iat)=chi(iat)-tt
+                enddo
+                max_chi_Si = -1.d30
+                max_chi_Mg = -1.d30
+                max_chi_O = -1.d30
+                min_chi_Si = 1.d30
+                min_chi_Mg = 1.d30
+                min_chi_O = 1.d30
+                max_qat_Si = -1.d30
+                max_qat_Mg = -1.d30
+                max_qat_O = -1.d30
+                min_qat_Si = 1.d30
+                min_qat_Mg = 1.d30
+                min_qat_O = 1.d30
+                do iat = 1 , atoms%nat
+                    if(trim(atoms%sat(iat))=='Si') then
+                        if (q_t(iat) >= max_qat_Si) max_qat_Si = q_t(iat)
+                        if (q_t(iat) < min_qat_Si) min_qat_Si = q_t(iat)
+                        if (chi(iat) >= max_chi_Si) max_chi_Si = chi(iat)
+                        if (chi(iat) < min_chi_Si) min_chi_Si = chi(iat)
+                    elseif(trim(atoms%sat(iat))=='Mg') then
+                        if (q_t(iat) >= max_qat_Mg) max_qat_Mg = q_t(iat)
+                        if (q_t(iat) < min_qat_Mg) min_qat_Mg = q_t(iat)
+                        if (chi(iat) >= max_chi_Mg) max_chi_Mg = chi(iat)
+                        if (chi(iat) < min_chi_Mg) min_chi_Mg = chi(iat)
+                    elseif(trim(atoms%sat(iat))=='O' ) then
+                        if (q_t(iat) >= max_qat_O) max_qat_O = q_t(iat)
+                        if (q_t(iat) < min_qat_O) min_qat_O = q_t(iat)
+                        if (chi(iat) >= max_chi_O) max_chi_O = chi(iat)
+                        if (chi(iat) < min_chi_O) min_chi_O = chi(iat)
+                    else
+                        write(*,*)'ERROR : atoms type is not defined in qat_from_dpm'
+                        stop
+                    endif
+                enddo
+                if (max_chi_Mg > -1.d20) then
+                    write(77,'(a,f10.5,a,f10.5,a,f10.5,f10.5)') 'min_chi_Mg : ' , min_chi_Mg , '    max_chi_Mg : ', max_chi_Mg, '   var_chi_Mg : ' , abs(max_chi_Mg - min_chi_Mg)
+                    write(77,'(a,f10.5,a,f10.5,a,f10.5,f10.5)') 'min_qat_Mg : ' , min_qat_Mg , '    max_qat_Mg : ', max_qat_Mg, '   var_qat_Mg : ' , abs(max_qat_Mg - min_qat_Mg)
+                endif
+                
+                if (max_chi_Si > -1.d20) then
+                    write(77,'(a,f10.5,a,f10.5,a,f10.5,f10.5)') 'min_chi_Si : ' , min_chi_Si , '    max_chi_Si : ', max_chi_Si, '   var_chi_Si : ' , abs(max_chi_Si - min_chi_Si)
+                    write(77,'(a,f10.5,a,f10.5,a,f10.5,f10.5)') 'min_qat_Si : ' , min_qat_Si , '    max_qat_Si : ', max_qat_Si, '   var_qat_Si : ' , abs(max_qat_Si - min_qat_Si)
+                endif
+
+                if (max_chi_O > -1.d20) then
+                    write(77,'(a,f10.5,a,f10.5,a,f10.5,f10.5)') 'min_chi_O : ' , min_chi_O , '    max_chi_O : ', max_chi_O, '    var_chi_O : ' , abs(max_chi_O - min_chi_O)
+                    write(77,'(a,f10.5,a,f10.5,a,f10.5,f10.5)') 'min_qat_O : ' , min_qat_O , '    max_qat_O : ', max_qat_O, '    var_qat_O : ' , abs(max_qat_O - min_qat_O)
+                endif
+                write(77,'(a,es24.6)') 'Error : ',error
+                write(77,'(a41,i4,i4,i4,i4,a41)') '---------------------------------------- ',iconf,igwe,igwi,ihard,' ----------------------------------------'
+            enddo ! of ihard
+        enddo ! of igwi
+    enddo ! of igwe
 end subroutine get_qat_from_dpm
 !*****************************************************************************************
