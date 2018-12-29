@@ -1386,9 +1386,9 @@ subroutine get_qat_from_dpm(parini,ann_arr,atoms,iconf)
     real(8):: qtarget
     real(8):: max_chi_Si , max_chi_Mg , max_chi_O , min_chi_Si , min_chi_Mg , min_chi_O , max_qat_Si , max_qat_Mg , max_qat_O , min_qat_Si , min_qat_Mg , min_qat_O 
     integer:: ngwe,igwe,ngwi,igwi,nhard,ihard
-    ngwe = 2
-    ngwi = 2
-    nhard= 2  
+    ngwe = 40
+    ngwi = 40
+    nhard= 10  
     pi=4.d0*atan(1.d0) 
     nat = atoms%nat
     do iat=1,atoms%nat
