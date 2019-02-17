@@ -76,7 +76,7 @@ subroutine get_fcn_ann(parini,idp,str_dataset,ann_arr,opt_ann,fcn_ann,fcn_ref)
     if(trim(ann_arr%approach)=='cent3') then
         fcn_ann=atoms%dpm(ixyz)
         fcn_ref=atoms_train%atoms(iconf)%dpm(ixyz)
-        !write(*,'(a,2f10.3)') 'fcn_ann,fcn_ref ',fcn_ann,fcn_ref
+        write(*,'(a,2f10.3)') 'fcn_ann,fcn_ref ',fcn_ann,fcn_ref
     else
         fcn_ann=atoms%epot
         fcn_ref=atoms_train%atoms(iconf)%epot

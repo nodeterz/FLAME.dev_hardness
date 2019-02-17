@@ -317,9 +317,6 @@ subroutine get_qat_from_chi_dir_cent3(parini,ann_arr,atoms,cent,a)
     enddo
     !-------------------------------------------------------
     !electron-nuclei interaction
-    !write(*,'(20es14.6)')cent%rel(1,1:nat)-atoms%ratp(1,1:nat)
-    !write(*,'(20es14.6)')cent%rel(2,1:nat)-atoms%ratp(2,1:nat)
-    !write(*,'(20es14.6)')cent%rel(3,1:nat)-atoms%ratp(3,1:nat)
     do jel=1,atoms%nat !summation over electrons
         tt=0.d0
         do iat=1,atoms%nat !summation over ions
