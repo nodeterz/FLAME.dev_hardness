@@ -91,7 +91,7 @@ subroutine get_symfunc_parameters_yaml(parini,iproc,fname,ann,rcut)
         ann%chi0           =  subdict_ann//"chi0" 
         ann%qinit          =  subdict_ann//"qinit"
     endif
-    if(trim(parini%approach_ann)=='cent2' .or. trim(parini%approach_ann)=='cent3') then
+    if(trim(parini%approach_ann)=='cent2') then
         ann%zion           =  subdict_ann//"zion" 
         ann%gausswidth_ion =  subdict_ann//"gausswidth_ion" 
         ann%spring_const   =  subdict_ann//"spring_const"
@@ -349,7 +349,7 @@ subroutine write_ann_yaml(parini,filename,ann,rcut)
         call set(subdict_ann//"chi0",ann%chi0)
         call set(subdict_ann//"qinit",ann%qinit)
     endif
-    if(trim(parini%approach_ann)=='cent2' .or. trim(parini%approach_ann)=='cent3') then
+    if(trim(parini%approach_ann)=='cent2') then
         call set(subdict_ann//"zion",ann%zion)
         call set(subdict_ann//"gausswidth_ion",ann%gausswidth_ion)
         call set(subdict_ann//"spring_const",ann%spring_const)

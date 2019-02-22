@@ -27,8 +27,7 @@ subroutine get_fcn_ann(parini,idp,str_dataset,ann_arr,opt_ann,fcn_ann,fcn_ref)
     elseif(trim(ann_arr%approach)=='cent2') then
         iconf=idp
     elseif(trim(ann_arr%approach)=='cent3') then
-        iconf=int((idp-1)/3)+1
-        ixyz=mod(idp-1,3)+1
+        iconf=idp
     elseif(trim(ann_arr%approach)=='tb') then
         iconf=idp
     endif
@@ -45,7 +44,7 @@ subroutine get_fcn_ann(parini,idp,str_dataset,ann_arr,opt_ann,fcn_ann,fcn_ref)
             enddo
         enddo
         call set_opt_ann_grad(ann_arr,ann_grad,opt_ann)
-    elseif(trim(ann_arr%approach)=='cent1') then
+    elseif(trim(ann_arr%approach)=='cent1' .or. trim(ann_arr%approach)=='cent3') then
         do iat=1,atoms%nat
             i=atoms%itypat(iat)
             do j=1,ann_arr%nweight_max
@@ -61,26 +60,10 @@ subroutine get_fcn_ann(parini,idp,str_dataset,ann_arr,opt_ann,fcn_ann,fcn_ref)
             enddo
         enddo
         call set_opt_ann_grad(ann_arr,ann_grad,opt_ann)
-    elseif(trim(ann_arr%approach)=='cent3') then
-        call update_ratp(atoms)
-        do iat=1,atoms%nat
-            i=atoms%itypat(iat)
-            do j=1,ann_arr%nweight_max
-                ann_grad(j,i)=ann_grad(j,i)+(atoms%ratp(ixyz,iat))*ann_arr%dqat_weights(j,iat)
-            enddo
-        enddo
-        call set_opt_ann_grad(ann_arr,ann_grad,opt_ann)
     endif
     deallocate(ann_grad)
-    !-----------------------------------------------------------------
-    if(trim(ann_arr%approach)=='cent3') then
-        fcn_ann=atoms%dpm(ixyz)
-        fcn_ref=atoms_train%atoms(iconf)%dpm(ixyz)
-        write(*,'(a,2f10.3)') 'fcn_ann,fcn_ref ',fcn_ann,fcn_ref
-    else
-        fcn_ann=atoms%epot
-        fcn_ref=atoms_train%atoms(iconf)%epot
-    endif
+    fcn_ann=atoms%epot
+    fcn_ref=atoms_train%atoms(iconf)%epot
 end subroutine get_fcn_ann
 !*****************************************************************************************
 subroutine cal_ann_main(parini,atoms,symfunc,ann_arr,opt_ann)

@@ -404,11 +404,7 @@ subroutine init_ann_train(parini,ann_arr,opt_ann,atoms_train,atoms_valid)
     endif
     !---------------------------------------------
     call init_ann_arr(ann_arr)
-    if(trim(ann_arr%approach)=='cent3') then
-        call init_opt_ann(3*atoms_train%nconf,opt_ann,ann_arr)
-    else
-        call init_opt_ann(atoms_train%nconf,opt_ann,ann_arr)
-    endif
+    call init_opt_ann(atoms_train%nconf,opt_ann,ann_arr)
     if(iproc==0) then
         !write(fnout,'(a12,i3.3)') 'err_train',iproc
         fnout="train_output.yaml"
