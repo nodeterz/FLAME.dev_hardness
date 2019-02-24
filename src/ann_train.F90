@@ -385,12 +385,12 @@ subroutine init_ann_train(parini,ann_arr,opt_ann,atoms_train,atoms_valid)
     character(30):: fnout
     character (50)::fname
     integer:: ierr
+    ann_arr%approach=trim(parini%approach_ann)
     call set_number_of_ann(parini,ann_arr)
     if(ann_arr%nann==0) stop 'ERROR: number of type of atoms zero in ann_train'
     call yaml_map('number of ann',ann_arr%nann)
     !write(*,*) 'Here', ann_arr%nann
     allocate(ann_arr%ann(ann_arr%nann))
-    ann_arr%approach=trim(parini%approach_ann)
     fname = trim(parini%stypat(1))//'.ann.input.yaml'
     inquire(file=trim(fname),exist=ann_arr%exists_yaml_file)
     if( ann_arr%exists_yaml_file) then
@@ -981,7 +981,8 @@ subroutine save_gbounds(parini,ann_arr,atoms_arr,strmess,symfunc_arr)
         endif
     enddo
     call yaml_mapping_open('symfunc bounds')
-    do i=1,ann_arr%nann
+    !do i=1,ann_arr%nann ASK Dr Ghasemi
+    do i=1,parini%ntypat
     do ig=1,ann_arr%ann(1)%nn(0) !HERE
         if(iproc==0) then
         call yaml_sequence(advance='no')
@@ -1063,7 +1064,8 @@ subroutine save_gbounds(parini,ann_arr,atoms_arr,strmess,symfunc_arr)
         enddo
         ! ----------------------------------------------------------------------------------------------
     else
-        do i=1,ann_arr%nann
+        !do i=1,ann_arr%nann ASK Dr ghasemi
+        do i=1,parini%ntypat
         do i0=1,ann_arr%ann(i)%nn(0)
             !if(abs(gminarr(i0))<epsilon(1.d0)
             if(gminarr(i0,i)==0.d0) then
@@ -1212,7 +1214,7 @@ subroutine ann_evaluate(parini,iter,ann_arr,symfunc_arr,atoms_arr,data_set)
     type(typ_symfunc):: symfunc
     type(typ_opt_ann):: opt_ann
     real(8):: rmse, errmax, tt, pi
-    real(8):: frmse, ttx, tty, ttz, ppx, ppy, ppz, tt1, tt2, tt3, ttn, tta
+    real(8):: frmse, ttx, tty, ttz, ppx, ppy, ppz, tt1, tt2, tt3, ttn, ttm, tta, ttb
     integer:: iconf, ierrmax, iat, nat_tot, nconf_force
     real(8):: time1=0.d0
     real(8):: time2=0.d0
@@ -1232,7 +1234,9 @@ subroutine ann_evaluate(parini,iter,ann_arr,symfunc_arr,atoms_arr,data_set)
     rmse=0.d0
     frmse=0.d0
     ttn=0.d0
+    ttm=0.d0
     tta=0.d0
+    ttb=0.d0
     nat_tot=0
     nconf_force=0
     errmax=0.d0
@@ -1310,14 +1314,18 @@ subroutine ann_evaluate(parini,iter,ann_arr,symfunc_arr,atoms_arr,data_set)
             tt3=sqrt(tt3)
         enddo
         ttn=ttn+ann_arr%fchi_norm
+        ttm=ttm+ann_arr%fhardness_norm
         tta=tta+ann_arr%fchi_angle
+        ttb=ttb+ann_arr%fhardness_angle
         !write(44,'(2i7,4es14.5)') iter,iconf,ann_arr%fchi_norm,ann_arr%fchi_angle,ttn/nconf_force,tta/nconf_force
         !endif
     enddo configuration
     rmse=sqrt(rmse/real(atoms_arr%nconf_inc,8))
     if(nconf_force==0) nconf_force=1
     ttn=ttn/real(nconf_force,8)
+    ttm=ttm/real(nconf_force,8)
     tta=tta/real(nconf_force,8)
+    ttb=ttb/real(nconf_force,8)
     if(nat_tot==0) nat_tot=1
     frmse=sqrt(frmse/real(3*nat_tot,8))
     if(iproc==0) then
@@ -1338,7 +1346,9 @@ subroutine ann_evaluate(parini,iter,ann_arr,symfunc_arr,atoms_arr,data_set)
         call yaml_map('iter',iter,unit=ann_arr%iunit)
         call yaml_map('rmse',rmse,fmt=trim(fmt_main),unit=ann_arr%iunit)
         call yaml_map('ttn',ttn,fmt=trim(fmt_main),unit=ann_arr%iunit)
+        call yaml_map('ttm',ttm,fmt=trim(fmt_main),unit=ann_arr%iunit)
         call yaml_map('tta',tta,fmt=trim(fmt_main),unit=ann_arr%iunit)
+        call yaml_map('ttb',ttb,fmt=trim(fmt_main),unit=ann_arr%iunit)
         call yaml_map('frmse',frmse,fmt=trim(fmt_main),unit=ann_arr%iunit)
         call yaml_map('errmax',errmax,fmt=trim(fmt_main),unit=ann_arr%iunit)
         call yaml_map('ierrmax',ierrmax,unit=ann_arr%iunit)

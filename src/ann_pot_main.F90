@@ -44,7 +44,7 @@ subroutine get_fcn_ann(parini,idp,str_dataset,ann_arr,opt_ann,fcn_ann,fcn_ref)
             enddo
         enddo
         call set_opt_ann_grad(ann_arr,ann_grad,opt_ann)
-    elseif(trim(ann_arr%approach)=='cent1' .or. trim(ann_arr%approach)=='cent3') then
+    elseif(trim(ann_arr%approach)=='cent1') then
         do iat=1,atoms%nat
             i=atoms%itypat(iat)
             do j=1,ann_arr%nweight_max
@@ -57,6 +57,15 @@ subroutine get_fcn_ann(parini,idp,str_dataset,ann_arr,opt_ann,fcn_ann,fcn_ref)
             i=atoms%itypat(iat)
             do j=1,ann_arr%nweight_max
                 ann_grad(j,i)=ann_grad(j,i)+(atoms%zat(iat)+atoms%qat(iat))*ann_arr%g_per_atom(j,iat)
+            enddo
+        enddo
+        call set_opt_ann_grad(ann_arr,ann_grad,opt_ann)
+    elseif(trim(ann_arr%approach)=='cent3') then
+        do iat=1,atoms%nat
+            i=atoms%itypat(iat)
+            do j=1,ann_arr%nweight_max
+                ann_grad(j,i)=ann_grad(j,i)+atoms%qat(iat)*ann_arr%g_per_atom_chi(j,iat)
+                ann_grad(j,parini%ntypat+i)=ann_grad(j,parini%ntypat+i)+0.5d0*(atoms%qat(iat)**2)*ann_arr%g_per_atom_hardness(j,iat)
             enddo
         enddo
         call set_opt_ann_grad(ann_arr,ann_grad,opt_ann)

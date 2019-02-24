@@ -31,6 +31,7 @@ module mod_ann
         real(8):: gausswidth
         real(8):: gausswidth_ion
         real(8):: chi0
+        real(8):: hardness0
         real(8):: hardness
         real(8):: spring_const
         real(8):: zion
@@ -39,6 +40,9 @@ module mod_ann
         real(8):: ener_ref
         real(8):: ampl_chi=-1.d0
         real(8):: prefactor_chi=-1.d0
+        real(8):: ampl_hardness=-1.d0
+        real(8):: ampl_grad_hardness=1.d0
+        real(8):: prefactor_hardness=-1.d0
         character(20):: method
 
         !The 1st type of symmetry functions introduced by Behler
@@ -77,6 +81,7 @@ module mod_ann
     type, public:: typ_ann_arr
         logical:: exists_yaml_file = .false.
         integer:: iunit
+        integer:: istep_opt=-1
         integer:: nann=-1
         integer:: natmax=1000
         integer:: nweight_max=-1
@@ -89,6 +94,8 @@ module mod_ann
         real(8):: epot_es
         real(8):: fchi_angle
         real(8):: fchi_norm
+        real(8):: fhardness_angle
+        real(8):: fhardness_norm
         !real(8), allocatable:: yall(:,:)
         !real(8), allocatable:: y0d(:,:,:)
         integer:: natsum(10)
@@ -111,8 +118,14 @@ module mod_ann
         real(8), allocatable:: chi_o(:)
         real(8), allocatable:: chi_d(:)
         real(8), allocatable:: fat_chi(:,:)
+        real(8), allocatable:: hardness_i(:)
+        real(8), allocatable:: hardness_o(:)
+        real(8), allocatable:: hardness_d(:)
+        real(8), allocatable:: fat_hardness(:,:)
         real(8), allocatable:: dqat_weights(:,:)
         real(8), allocatable:: g_per_atom(:,:)
+        real(8), allocatable:: g_per_atom_chi(:,:)
+        real(8), allocatable:: g_per_atom_hardness(:,:)
         real(8), allocatable:: g_per_bond(:,:,:)
         real(8), allocatable:: fatpq(:,:)
         real(8), allocatable:: stresspq(:,:,:)
@@ -137,7 +150,12 @@ subroutine set_number_of_ann(parini,ann_arr)
     type(typ_parini), intent(in):: parini
     type(typ_ann_arr), intent(inout):: ann_arr
     !local variables
-    ann_arr%nann=parini%ntypat
+    if(trim(parini%approach_ann)=='cent3') then
+        ann_arr%nann=2*parini%ntypat
+    else
+        ann_arr%nann=parini%ntypat
+    endif
+    
     if(parini%bondbased_ann) then
         ann_arr%nann=4
     endif
@@ -208,14 +226,24 @@ subroutine ann_arr_allocate(ann_arr)
     allocate(ann_arr%chi_i(1:ann_arr%natmax))
     allocate(ann_arr%chi_o(1:ann_arr%natmax))
     allocate(ann_arr%chi_d(1:ann_arr%natmax))
+    allocate(ann_arr%fat_hardness(1:3,1:ann_arr%natmax))
+    allocate(ann_arr%hardness_i(1:ann_arr%natmax))
+    allocate(ann_arr%hardness_o(1:ann_arr%natmax))
+    allocate(ann_arr%hardness_d(1:ann_arr%natmax))
     allocate(ann_arr%a(1:(ann_arr%natmax+1)*(ann_arr%natmax+1)))
     ann_arr%fat_chi=0.d0
     ann_arr%chi_i=0.d0
     ann_arr%chi_o=0.d0
     ann_arr%chi_d=0.d0
+    ann_arr%fat_hardness=0.d0
+    ann_arr%hardness_i=0.d0
+    ann_arr%hardness_o=0.d0
+    ann_arr%hardness_d=0.d0
     ann_arr%a=0.d0
     allocate(ann_arr%dqat_weights(ann_arr%nweight_max,ann_arr%natmax))
     allocate(ann_arr%g_per_atom(ann_arr%nweight_max,ann_arr%natmax))
+    allocate(ann_arr%g_per_atom_chi(ann_arr%nweight_max,ann_arr%natmax))
+    allocate(ann_arr%g_per_atom_hardness(ann_arr%nweight_max,ann_arr%natmax))
     !symfunc%linked_lists%maxbound_rad is assumed 10000
     allocate(ann_arr%fatpq(1:3,1:10000))
     allocate(ann_arr%stresspq(1:3,1:3,1:10000))
@@ -242,6 +270,8 @@ subroutine ann_arr_deallocate(ann_arr)
     deallocate(ann_arr%fat_chi)
     deallocate(ann_arr%dqat_weights)
     deallocate(ann_arr%g_per_atom)
+    deallocate(ann_arr%g_per_atom_chi)
+    deallocate(ann_arr%g_per_atom_hardness)
     deallocate(ann_arr%fatpq)
     deallocate(ann_arr%stresspq)
     deallocate(ann_arr%ipiv)

@@ -10,7 +10,7 @@ subroutine read_input_ann_yaml(parini,iproc,ann_arr)
     integer, intent(in):: iproc
     type(typ_ann_arr), intent(inout):: ann_arr
     !local variables
-    integer:: ios, iann, i, j
+    integer:: ios, iann, i, j, k
     character(50):: fname,str1
     character(5):: stypat
     real(8)::rcut
@@ -21,7 +21,11 @@ subroutine read_input_ann_yaml(parini,iproc,ann_arr)
         if(parini%bondbased_ann) then
             stypat=parini%stypat(1)
         else
-            stypat=parini%stypat(iann)
+            k = iann
+            if(k>parini%ntypat) then
+                k=k-parini%ntypat
+            endif
+            stypat=parini%stypat(k)
         endif
         !-------------------------------------------------------
         fname = trim(stypat)//'.ann.input.yaml'
@@ -95,6 +99,12 @@ subroutine get_symfunc_parameters_yaml(parini,iproc,fname,ann,rcut)
         ann%zion           =  subdict_ann//"zion" 
         ann%gausswidth_ion =  subdict_ann//"gausswidth_ion" 
         ann%spring_const   =  subdict_ann//"spring_const"
+    endif
+    if(trim(parini%approach_ann)=='cent3') then
+        ann%ampl_hardness       =  subdict_ann//"ampl_hardness" 
+        ann%prefactor_hardness  =  subdict_ann//"prefactor_hardness" 
+        ann%hardness0           =  subdict_ann//"hardness0" 
+        ann%ampl_grad_hardness       =  subdict_ann//"ampl_grad_hardness" 
     endif
     if(trim(parini%approach_ann)=='tb') then
         ann%ener_ref       =  subdict_ann//"ener_ref" 
@@ -279,7 +289,7 @@ subroutine write_ann_all_yaml(parini,ann_arr,iter)
     character(21):: fn
     character(1):: fn_tt
     character(50):: filename
-    integer:: i
+    integer:: i, j
     if(iter==-1) then
         write(fn,'(a15)') '.ann.param.yaml'
     else
@@ -299,7 +309,11 @@ subroutine write_ann_all_yaml(parini,ann_arr,iter)
     elseif(trim(ann_arr%approach)=='atombased' .or. trim(ann_arr%approach)=='eem1' .or. &
         trim(ann_arr%approach)=='cent1' .or. trim(ann_arr%approach)=='cent2' .or. trim(ann_arr%approach)=='cent3') then
         do i=1,ann_arr%nann
-            filename=trim(parini%stypat(i))//trim(fn)
+            j=i
+            if(j>parini%ntypat) then
+                j=j-parini%ntypat
+            endif
+            filename=trim(parini%stypat(j))//trim(fn)
             !write(*,'(a)') trim(filename)
             call yaml_comment(trim(filename))
             call write_ann_yaml(parini,filename,ann_arr%ann(i),ann_arr%rcut)
