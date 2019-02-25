@@ -919,7 +919,7 @@ subroutine save_gbounds(parini,ann_arr,atoms_arr,strmess,symfunc_arr)
     character(*), intent(in):: strmess
     type(typ_symfunc_arr), intent(inout):: symfunc_arr
     !local variables
-    integer:: iconf, ib, ig, i, iat, jat, i0
+    integer:: iconf, ib, ig, i, j, iat, jat, i0
     real(8), allocatable:: gminarr(:,:), gmaxarr(:,:) !, poll_period
     integer, allocatable:: iatmin(:,:), iatmax(:,:), iconfmin(:,:), iconfmax(:,:)
     integer:: ibmin(350), ibmax(350)
@@ -1080,6 +1080,23 @@ subroutine save_gbounds(parini,ann_arr,atoms_arr,strmess,symfunc_arr)
             endif
             ann_arr%ann(i)%two_over_gdiff(i0)=2.d0/(ann_arr%ann(i)%gbounds(2,i0)-ann_arr%ann(i)%gbounds(1,i0))
         enddo
+            if(trim(parini%approach_ann)=='cent3') then ! this if is temprory
+                j=i+parini%ntypat
+                do i0=1,ann_arr%ann(j)%nn(0)
+                    !if(abs(gminarr(i0))<epsilon(1.d0)
+                    if(gminarr(i0,i)==0.d0) then
+                        ann_arr%ann(j)%gbounds(1,i0)=-epsilon(1.d0)
+                    else
+                        ann_arr%ann(j)%gbounds(1,i0)=gminarr(i0,i)
+                    endif
+                    if(gmaxarr(i0,i)==0.d0) then
+                        ann_arr%ann(j)%gbounds(2,i0)=epsilon(1.d0)
+                    else
+                        ann_arr%ann(j)%gbounds(2,i0)=gmaxarr(i0,i)
+                    endif
+                    ann_arr%ann(j)%two_over_gdiff(i0)=2.d0/(ann_arr%ann(i)%gbounds(2,i0)-ann_arr%ann(i)%gbounds(1,i0))
+                enddo
+            endif
         enddo
     endif
     !if(trim(parini%symfunc)=='do_not_save') then

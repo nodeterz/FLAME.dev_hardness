@@ -315,6 +315,7 @@ subroutine yaml_get_ann_parameters(parini)
     parini%alphax_r=parini%subdict//"alphax_r"
     parini%nconf_rmse=parini%subdict//"nconf_rmse"
     parini%ampl_rand=parini%subdict//"ampl_rand"
+    parini%ampl_grad_hardness=parini%subdict//"ampl_grad_hardness"
     parini%symfunc_type_ann=parini%subdict//"symfunc_type"
     parini%syslinsolver_ann=parini%subdict//"syslinsolver"
     parini%rgnrmtol=parini%subdict//"rgnrmtol"

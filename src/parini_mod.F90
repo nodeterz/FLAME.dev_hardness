@@ -85,6 +85,7 @@ module mod_parini
         real(8):: alphax_q=1.d0
         real(8):: alphax_r=5.d-2
         real(8):: ampl_rand=1.d0
+        real(8):: ampl_grad_hardness=0.d0
         real(8):: rgnrmtol=-1.d0
         real(8):: qgnrmtol=-1.d0
         real(8):: etol_ann !the tolerance difference of energies of two configuration

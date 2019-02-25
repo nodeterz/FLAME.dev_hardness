@@ -209,6 +209,7 @@
    alphax_r: 0.05
    nconf_rmse: 0
    ampl_rand: 1.0
+   ampl_grad_hardness: 0.0
    symfunc_type: behler
    syslinsolver: direct
    rgnrmtol: 5.E-4

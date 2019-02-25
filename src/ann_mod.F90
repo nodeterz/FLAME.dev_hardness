@@ -41,7 +41,6 @@ module mod_ann
         real(8):: ampl_chi=-1.d0
         real(8):: prefactor_chi=-1.d0
         real(8):: ampl_hardness=-1.d0
-        real(8):: ampl_grad_hardness=1.d0
         real(8):: prefactor_hardness=-1.d0
         character(20):: method
 
@@ -129,6 +128,8 @@ module mod_ann
         real(8), allocatable:: g_per_bond(:,:,:)
         real(8), allocatable:: fatpq(:,:)
         real(8), allocatable:: stresspq(:,:,:)
+        real(8), allocatable:: fatpq_hardness(:,:)
+        real(8), allocatable:: stresspq_hardness(:,:,:)
         integer, allocatable:: ipiv(:)
         real(8), allocatable:: qq(:)
         type(typ_ann), allocatable:: ann(:)
@@ -247,6 +248,8 @@ subroutine ann_arr_allocate(ann_arr)
     !symfunc%linked_lists%maxbound_rad is assumed 10000
     allocate(ann_arr%fatpq(1:3,1:10000))
     allocate(ann_arr%stresspq(1:3,1:3,1:10000))
+    allocate(ann_arr%fatpq_hardness(1:3,1:10000))
+    allocate(ann_arr%stresspq_hardness(1:3,1:3,1:10000))
     allocate(ann_arr%ipiv(1:ann_arr%natmax+1))
     allocate(ann_arr%qq(1:ann_arr%natmax+1))
 end subroutine ann_arr_allocate
@@ -274,6 +277,8 @@ subroutine ann_arr_deallocate(ann_arr)
     deallocate(ann_arr%g_per_atom_hardness)
     deallocate(ann_arr%fatpq)
     deallocate(ann_arr%stresspq)
+    deallocate(ann_arr%fatpq_hardness)
+    deallocate(ann_arr%stresspq_hardness)
     deallocate(ann_arr%ipiv)
     deallocate(ann_arr%qq)
 end subroutine ann_arr_deallocate

@@ -85,8 +85,7 @@ subroutine get_symfunc_parameters_yaml(parini,iproc,fname,ann,rcut)
     !endif
     rcut               =  subdict_ann//"rcut"
     ann%method         =  subdict_ann//"method"
-    if(trim(parini%approach_ann)=='eem1' .or. trim(parini%approach_ann)=='cent1' .or. &
-        trim(parini%approach_ann)=='cent2' .or. trim(parini%approach_ann)=='cent3') then
+    if(trim(parini%approach_ann)=='eem1' .or. trim(parini%approach_ann)=='cent1' .or.trim(parini%approach_ann)=='cent2' ) then
         ann%ampl_chi       =  subdict_ann//"ampl_chi" 
         ann%prefactor_chi  =  subdict_ann//"prefactor_chi" 
         ann%ener_ref       =  subdict_ann//"ener_ref" 
@@ -101,10 +100,14 @@ subroutine get_symfunc_parameters_yaml(parini,iproc,fname,ann,rcut)
         ann%spring_const   =  subdict_ann//"spring_const"
     endif
     if(trim(parini%approach_ann)=='cent3') then
+        ann%ampl_chi       =  subdict_ann//"ampl_chi" 
+        ann%prefactor_chi  =  subdict_ann//"prefactor_chi" 
         ann%ampl_hardness       =  subdict_ann//"ampl_hardness" 
         ann%prefactor_hardness  =  subdict_ann//"prefactor_hardness" 
+        ann%ener_ref       =  subdict_ann//"ener_ref" 
+        ann%gausswidth     =  subdict_ann//"gausswidth" 
+        ann%chi0           =  subdict_ann//"chi0" 
         ann%hardness0           =  subdict_ann//"hardness0" 
-        ann%ampl_grad_hardness       =  subdict_ann//"ampl_grad_hardness" 
     endif
     if(trim(parini%approach_ann)=='tb') then
         ann%ener_ref       =  subdict_ann//"ener_ref" 
@@ -307,21 +310,195 @@ subroutine write_ann_all_yaml(parini,ann_arr,iter)
             call write_ann_yaml(parini,filename,ann_arr%ann(i),ann_arr%rcut)
         enddo
     elseif(trim(ann_arr%approach)=='atombased' .or. trim(ann_arr%approach)=='eem1' .or. &
-        trim(ann_arr%approach)=='cent1' .or. trim(ann_arr%approach)=='cent2' .or. trim(ann_arr%approach)=='cent3') then
-        do i=1,ann_arr%nann
-            j=i
-            if(j>parini%ntypat) then
-                j=j-parini%ntypat
-            endif
-            filename=trim(parini%stypat(j))//trim(fn)
+        trim(ann_arr%approach)=='cent1' .or. trim(ann_arr%approach)=='cent2') then
+        do i=1,parini%ntypat
+            filename=trim(parini%stypat(i))//trim(fn)
             !write(*,'(a)') trim(filename)
             call yaml_comment(trim(filename))
             call write_ann_yaml(parini,filename,ann_arr%ann(i),ann_arr%rcut)
+        enddo
+    elseif(trim(ann_arr%approach)=='cent3') then
+        do i=1,parini%ntypat
+            filename=trim(parini%stypat(i))//trim(fn)
+            !write(*,'(a)') trim(filename)
+            call yaml_comment(trim(filename))
+            call write_ann_yaml_cent3(parini,filename,ann_arr%ann(i),ann_arr%ann(parini%ntypat+i),ann_arr%rcut)
         enddo
     else
         stop 'ERROR: writing ANN parameters is only for cent1,cent2,cent3,tb'
     endif
 end subroutine write_ann_all_yaml
+!*****************************************************************************************
+subroutine write_ann_yaml_cent3(parini,filename,ann,ann_2,rcut)
+    use mod_interface
+    use futile
+    use mod_parini, only: typ_parini
+    use mod_ann, only: typ_ann
+    use dictionaries
+    implicit none
+    type(typ_parini), intent(in):: parini
+    character(*):: filename
+    type(typ_ann), intent(in):: ann, ann_2
+    real(8), intent(in):: rcut
+    !local variables
+    !integer:: 
+    !real(8):: 
+    integer:: i, j, k, l, ios, ialpha, i0, iline, ierr, iunit, il
+    character(5):: sat1, sat2
+    character(8):: key1
+    character(250):: str1
+    type(dictionary), pointer :: dict_ann
+    type(dictionary), pointer :: subdict_ann
+    dict_ann=>dict_new()
+    !-------------------------------------------------------
+    call set(dict_ann//"main","nodes")
+    subdict_ann=>dict_ann//"main"
+    !ann%nl-1 is output layer so following loop goes up to ann%nl-2
+    do il=0,ann%nl-2
+        call set(subdict_ann//"nodes"//il,ann%nn(il+1))
+    enddo
+    call set(subdict_ann//"rcut",rcut)
+    call set(subdict_ann//"method",ann%method)
+    if(trim(parini%approach_ann)=='eem1' .or. trim(parini%approach_ann)=='cent1' .or. &
+        trim(parini%approach_ann)=='cent2' .or. trim(parini%approach_ann)=='cent3') then
+        call set(subdict_ann//"ampl_chi",ann%ampl_chi)
+        call set(subdict_ann//"prefactor_chi",ann%prefactor_chi)
+        call set(subdict_ann//"ener_ref",ann%ener_ref)
+        call set(subdict_ann//"gausswidth",ann%gausswidth)
+        call set(subdict_ann//"hardness",ann%hardness)
+        call set(subdict_ann//"chi0",ann%chi0)
+        call set(subdict_ann//"qinit",ann%qinit)
+    endif
+    if(trim(parini%approach_ann)=='cent2') then
+        call set(subdict_ann//"zion",ann%zion)
+        call set(subdict_ann//"gausswidth_ion",ann%gausswidth_ion)
+        call set(subdict_ann//"spring_const",ann%spring_const)
+    endif
+    if(trim(parini%approach_ann)=='tb') then
+        !ann%ener_ref       =  subdict_ann//"ener_ref" 
+        call set(subdict_ann//"ener_ref",ann%ener_ref)
+    endif
+    nullify(subdict_ann)
+    !-------------------------------------------------------
+    subdict_ann=>dict_ann//"symfunc"
+    i0=0
+    do i=1,ann%ng1
+        write(key1,'(a,i3.3)')"g01_",i 
+        i0=i0+1
+        write(str1,'(2f8.4,2es24.15)') ann%g1eta(i),ann%g1rs(i),ann%gbounds(1,i0),ann%gbounds(2,i0)
+        call set(subdict_ann//key1,str1)
+    enddo
+    !-------------------------------------------------------
+    do i=1,ann%ng2
+        write(key1,'(a,i3.3)')"g02_",i 
+        i0=i0+1
+        if (trim(ann%method) == "behler") then
+            sat1=parini%stypat(ann%g2i(i))
+            write(str1,'(2f8.4,2es24.15,1a5)') ann%g2eta(i),ann%g2rs(i),ann%gbounds(1,i0),ann%gbounds(2,i0),trim(sat1)
+        else
+            write(str1,'(2f10.6,2es24.15)') ann%g2eta(i),ann%g2rs(i),ann%gbounds(1,i0),ann%gbounds(2,i0)
+        endif
+        call set(subdict_ann//key1,str1)
+    enddo
+    !-------------------------------------------------------
+    do i=1,ann%ng3
+        write(key1,'(a,i3.3)')"g03_",i 
+        i0=i0+1
+        write(str1,'(1f8.4)') ann%g3kappa(i)
+        call set(subdict_ann//key1,str1)
+    enddo
+    do i=1,ann%ng4
+        write(key1,'(a,i3.3)')"g04_",i 
+        i0=i0+1
+        write(str1,'(3f8.4,2es24.15)') ann%g4eta(i),ann%g4zeta(i),ann%g4lambda(i),ann%gbounds(1,i0),ann%gbounds(2,i0)
+        call set(subdict_ann//key1,str1)
+    enddo
+    !-------------------------------------------------------
+    do i=1,ann%ng5
+        write(key1,'(a,i3.3)')"g05_",i 
+        i0=i0+1
+        if (trim(ann%method) == "behler") then
+            sat1=parini%stypat(ann%g5i(1,i))
+            sat2=parini%stypat(ann%g5i(2,i))
+            write(str1,'(3f8.4,2es24.15,2a5)') ann%g5eta(i),ann%g5zeta(i),ann%g5lambda(i),ann%gbounds(1,i0), &
+                                               ann%gbounds(2,i0),trim(sat1),trim(sat2)
+        else
+            write(str1,'(3f10.6,2es24.15)') ann%g5eta(i),ann%g5zeta(i),ann%g5lambda(i),ann%gbounds(1,i0),ann%gbounds(2,i0)
+        endif
+        call set(subdict_ann//key1,str1)
+    enddo
+    nullify(subdict_ann)
+    !-------------------------------------------------------
+    !write(1,'(i6,2x,a)') ann%ng6,'#ng6'
+    !do i=1,ann%ng6/3
+    !    i0=i0+1
+    !    write(1,'(1f8.4,2es24.15)') ann%g6eta(i),ann%gbounds(1,i0),ann%gbounds(2,i0)
+    !    i0=i0+1
+    !    write(1,'(16x,2es24.15)') ann%gbounds(1,i0),ann%gbounds(2,i0)
+    !    i0=i0+1
+    !    write(1,'(16x,2es24.15)') ann%gbounds(1,i0),ann%gbounds(2,i0)
+    !enddo
+    !-------------------------------------------------------
+    subdict_ann=>dict_ann//"weights_chi"
+    i0=0
+    do ialpha=1,ann%nl
+        write(str1,'(2(a,i1))') '#main nodes weights connecting layers ',ialpha,' and ',ialpha-1
+        call set(subdict_ann//i0//"comment",str1)
+
+        do j=1,ann%nn(ialpha)
+            do i=1,ann%nn(ialpha-1)
+                write(str1,'(es24.15)') ann%a(i,j,ialpha)
+                call set(subdict_ann//i0,str1)
+                i0=i0+1
+            enddo
+        enddo
+        write(str1,'(a,i1)') '#bias nodes weights for layer ',ialpha
+        call set(subdict_ann//i0//"comment",str1)
+        do i=1,ann%nn(ialpha)
+            write(str1,'(es24.15)') ann%b(i,ialpha)
+            call set(subdict_ann//i0,str1)
+            i0=i0+1
+        enddo
+    enddo
+    nullify(subdict_ann)
+     !-------------------------------------------------------
+    subdict_ann=>dict_ann//"weights_hardness"
+    i0=0
+    do ialpha=1,ann_2%nl
+        write(str1,'(2(a,i1))') '#main nodes weights connecting layers ',ialpha,' and ',ialpha-1
+        call set(subdict_ann//i0//"comment",str1)
+
+        do j=1,ann_2%nn(ialpha)
+            do i=1,ann_2%nn(ialpha-1)
+                write(str1,'(es24.15)') ann_2%a(i,j,ialpha)
+                call set(subdict_ann//i0,str1)
+                i0=i0+1
+            enddo
+        enddo
+        write(str1,'(a,i1)') '#bias nodes weights for layer ',ialpha
+        call set(subdict_ann//i0//"comment",str1)
+        do i=1,ann_2%nn(ialpha)
+            write(str1,'(es24.15)') ann_2%b(i,ialpha)
+            call set(subdict_ann//i0,str1)
+            i0=i0+1
+        enddo
+    enddo
+    nullify(subdict_ann)
+    !-------------------------------------------------------
+   !-------------------------------------------------------
+    iunit=f_get_free_unit(10**5)
+    call yaml_set_stream(unit=iunit,filename=trim(filename),&
+         record_length=92,istat=ierr,setdefault=.false.,tabbing=0,position='rewind')
+    if (ierr==0) then
+        call yaml_dict_dump(dict_ann,unit=iunit)
+       call yaml_close_stream(unit=iunit)
+    else
+       call yaml_warning('Failed to create'//trim(filename)//', error code='//trim(yaml_toa(ierr)))
+    end if
+    !-------------------------------------------------------
+    call dict_free(dict_ann)
+    nullify(dict_ann)
+end subroutine write_ann_yaml_cent3
 !*****************************************************************************************
 subroutine write_ann_yaml(parini,filename,ann,rcut)
     use mod_interface

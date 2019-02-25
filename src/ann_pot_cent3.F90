@@ -54,7 +54,6 @@ subroutine cal_ann_cent3(parini,atoms,symfunc,ann_arr)
         ann_arr%a=0.d0
     endif
     if(parini%iverbose>=2) call cpu_time(time1)
-    call init_electrostatic_cent1(parini,atoms,ann_arr,ann_arr%a,poisson)
     if(parini%iverbose>=2) call cpu_time(time2)
     if(ann_arr%compute_symfunc) then
         call symmetry_functions(parini,ann_arr,atoms,symfunc,.true.)
@@ -66,17 +65,15 @@ subroutine cal_ann_cent3(parini,atoms,symfunc,ann_arr)
     if(.not. (trim(parini%task)=='ann' .and. trim(parini%subtask_ann)=='train')) then
         allocate(ann_arr%fatpq(1:3,1:symfunc%linked_lists%maxbound_rad))
         allocate(ann_arr%stresspq(1:3,1:3,1:symfunc%linked_lists%maxbound_rad))
+        allocate(ann_arr%fatpq_hardness(1:3,1:symfunc%linked_lists%maxbound_rad))
+        allocate(ann_arr%stresspq_hardness(1:3,1:3,1:symfunc%linked_lists%maxbound_rad))
     endif
     if(parini%iverbose>=2) call cpu_time(time3)
-!    if(ann_arr%istep_opt==1) then
-!        ann_arr%ann(parini%ntypat+1:2*parini%ntypat)=ann_arr%ann(1:parini%ntypat) !!ASK Dr GHASMEI
-!    endif
     over_iat: do iat=1,atoms%nat
         i=atoms%itypat(iat)
         j=parini%ntypat+atoms%itypat(iat)
-
         ng=ann_arr%ann(i)%nn(0)
-        ng_2=ann_arr%ann(parini%ntypat+i)%nn(0)
+        ng_2=ann_arr%ann(j)%nn(0)
         ann_arr%ann(i)%y(1:ng,0)=symfunc%y(1:ng,iat)
         ann_arr%ann(j)%y(1:ng_2,0)=symfunc%y(1:ng_2,iat)
         if(trim(ann_arr%event)=='potential' .or. trim(ann_arr%event)=='evalu') then
@@ -84,11 +81,9 @@ subroutine cal_ann_cent3(parini,atoms,symfunc,ann_arr)
             call cal_architecture(ann_arr%ann(j),out_ann_2)
             call cal_force_chi_part1(parini,symfunc,iat,atoms,out_ann,ann_arr)
             call cal_force_hardness_part1(parini,symfunc,iat,atoms,out_ann_2,ann_arr)
-            write(98,'(a,3es14.6)') '1:ntypat        ',maxval(ann_arr%hardness_o(1:parini%ntypat)),minval(ann_arr%hardness_o(1:parini%ntypat)),&
-                                                       maxval(ann_arr%hardness_o(1:parini%ntypat))-minval(ann_arr%hardness_o(1:parini%ntypat))
-            write(97,'(a,3es14.6)')'ntypat+1:2*ntypat',maxval(ann_arr%hardness_o(parini%ntypat+1:2*parini%ntypat)),&
-                                                       minval(ann_arr%hardness_o(parini%ntypat+1:2*parini%ntypat)),&
-                                                       maxval(ann_arr%hardness_o(parini%ntypat+1:2*parini%ntypat))-minval(ann_arr%hardness_o(parini%ntypat+1:2*parini%ntypat))
+            ann_arr%hardness_i(iat)=out_ann_2
+            tt4=tanh(ann_arr%ann(j)%prefactor_hardness*out_ann_2)
+            ann_arr%hardness_o(iat)=ann_arr%ann(j)%ampl_hardness*tt4+ann_arr%ann(j)%hardness0
         elseif(trim(ann_arr%event)=='train') then
             call cal_architecture_der(ann_arr%ann(i),out_ann)
             ann_arr%chi_i(iat)=out_ann
@@ -102,12 +97,15 @@ subroutine cal_ann_cent3(parini,atoms,symfunc,ann_arr)
             tt4=tanh(ann_arr%ann(j)%prefactor_hardness*out_ann_2)
             ann_arr%hardness_o(iat)=ann_arr%ann(j)%ampl_hardness*tt4+ann_arr%ann(j)%hardness0
             call convert_ann_epotd(ann_arr%ann(j),ann_arr%num(i),ann_arr%g_per_atom_hardness(1,iat))
-            ann_arr%g_per_atom_hardness(1:ann_arr%num(1),iat)=ann_arr%ann(j)%ampl_grad_hardness*ann_arr%g_per_atom_hardness(1:ann_arr%num(1),iat)*&
+            ann_arr%g_per_atom_hardness(1:ann_arr%num(1),iat)=parini%ampl_grad_hardness*ann_arr%g_per_atom_hardness(1:ann_arr%num(1),iat)*&
                                                               ann_arr%ann(j)%ampl_hardness*ann_arr%ann(j)%prefactor_hardness*(1.d0-tt4**2)
         else
             stop 'ERROR: undefined content for ann_arr%event'
         endif
     enddo over_iat
+    write(98,'(a,3es14.6)')'J_max,J_min_J_var',maxval(ann_arr%hardness_o(1:parini%ntypat)),minval(ann_arr%hardness_o(1:parini%ntypat)),&
+                                               maxval(ann_arr%hardness_o(1:parini%ntypat))-minval(ann_arr%hardness_o(1:parini%ntypat))
+    call init_electrostatic_cent3(parini,atoms,ann_arr,ann_arr%a,poisson)
     !This must be here since contribution from coulomb
     !interaction is calculated during the process of charge optimization.
     if(parini%iverbose>=2) call cpu_time(time4)
@@ -120,7 +118,7 @@ subroutine cal_ann_cent3(parini,atoms,symfunc,ann_arr)
         call cal_force_hardness_part2(parini,symfunc,atoms,ann_arr)
     endif !end of if for potential
     if(parini%iverbose>=2) call cpu_time(time6)
-    call get_electrostatic_cent3(parini,atoms,ann_arr,epot_c,ann_arr%a,poisson)
+         call get_electrostatic_cent3(parini,atoms,ann_arr,epot_c,ann_arr%a,poisson)
     if(parini%iverbose>=2) then
         call cpu_time(time7)
         call yaml_mapping_open('Timing of CENT1')
@@ -171,6 +169,7 @@ subroutine cal_ann_cent3(parini,atoms,symfunc,ann_arr)
         tt5=sqrt(tt5)
         ann_arr%fhardness_angle=tt6/(tt4*tt5)
         ann_arr%fhardness_norm=tt5/tt4
+        write(*,'(a,4es14.6)') 'f',tt2,tt5
     endif
     call fini_electrostatic_cent1(parini,atoms,poisson)
     !call repulsive_potential_cent(parini,atoms,ann_arr)
@@ -204,9 +203,102 @@ subroutine cal_ann_cent3(parini,atoms,symfunc,ann_arr)
         deallocate(ann_arr%fat_hardness)
         deallocate(ann_arr%fatpq)
         deallocate(ann_arr%stresspq)
+        deallocate(ann_arr%fatpq_hardness)
+        deallocate(ann_arr%stresspq_hardness)
     endif
     call f_release_routine()
 end subroutine cal_ann_cent3
+!*****************************************************************************************
+subroutine init_electrostatic_cent3(parini,atoms,ann_arr,a,poisson)
+    use mod_interface
+    use mod_parini, only: typ_parini
+    use mod_atoms, only: typ_atoms, update_ratp
+    use mod_ann, only: typ_ann_arr
+    use mod_electrostatics, only: typ_poisson
+    implicit none
+    type(typ_parini), intent(in):: parini
+    type(typ_atoms), intent(inout):: atoms
+    type(typ_ann_arr), intent(inout):: ann_arr
+    real(8), intent(inout):: a(atoms%nat+1,atoms%nat+1)
+    type(typ_poisson), intent(inout):: poisson
+    real(8),allocatable :: gausswidth(:)
+    !local variables
+    integer:: iat, jat
+    real(8):: vol, c
+    real(8):: dx, dy, dz, r, tt1, tt2, pi, beta_iat, beta_jat, gama, ttf
+    associate(epot_es=>ann_arr%epot_es)
+    pi=4.d0*atan(1.d0)
+    ann_arr%ener_ref=0.d0
+    do iat=1,atoms%nat
+        ann_arr%ener_ref=ann_arr%ener_ref+ann_arr%ann(atoms%itypat(iat))%ener_ref
+    enddo
+    if (.not. parini%ewald) then 
+        poisson%alpha = maxval(ann_arr%ann(:)%gausswidth)
+    else 
+        if (parini%alpha_ewald<0.d0) then
+            call getvol_alborz(atoms%cellvec,vol)
+            c=2.2d0
+            poisson%alpha = 1.d0/(c*sqrt(pi)*(atoms%nat/vol**2)**(1.d0/6.d0))
+            write(*,*)"optimized alpha = ", poisson%alpha
+        else
+            poisson%alpha=parini%alpha_ewald
+        endif
+    end if
+    if(trim(parini%syslinsolver_ann)=='direct' .or. trim(parini%syslinsolver_ann)=='apply_matrix') then
+        if(trim(atoms%boundcond)/='free') then
+            write(*,*) 'ERROR: syslinsolver=direct can be used only for free BC.'
+        endif
+        call get_amat_cent3(atoms,ann_arr,a)
+    elseif(trim(parini%syslinsolver_ann)=='operator') then
+        if(trim(atoms%boundcond)=='bulk' .or. trim(atoms%boundcond)=='slab') then
+            allocate(gausswidth(atoms%nat))
+            gausswidth(:)=ann_arr%ann(atoms%itypat(:))%gausswidth
+            poisson%task_finit="alloc_rho:set_ngp"
+            call init_hartree(parini,atoms,poisson,gausswidth)
+            deallocate(gausswidth)
+        else
+            write(*,*) 'ERROR: currently syslinsolver=operator only for BC=bulk/slab.'
+            stop
+        endif
+    else
+        write(*,*) 'ERROR: unknown value for syslinsolver',trim(parini%syslinsolver_ann)
+        stop
+    endif
+    end associate
+end subroutine init_electrostatic_cent3
+!*****************************************************************************************
+subroutine get_amat_cent3(atoms,ann_arr,a)
+    use mod_interface
+    use mod_atoms, only: typ_atoms, update_ratp
+    use mod_ann, only: typ_ann_arr
+    implicit none
+    type(typ_atoms), intent(inout):: atoms
+    type(typ_ann_arr), intent(inout):: ann_arr
+    real(8), intent(inout):: a(atoms%nat+1,atoms%nat+1)
+    !local variables
+    integer:: iat, jat
+    real(8):: dx, dy, dz, r, pi, beta_iat, beta_jat, gama
+    pi=4.d0*atan(1.d0)
+    call update_ratp(atoms)
+    do iat=1,atoms%nat
+        a(iat,atoms%nat+1)=1.d0
+        a(atoms%nat+1,iat)=1.d0
+        beta_iat=ann_arr%ann(atoms%itypat(iat))%gausswidth
+        gama=1.d0/sqrt(beta_iat**2+beta_iat**2)
+        a(iat,iat)=gama*2.d0/sqrt(pi)+ann_arr%hardness_o(iat)
+        do jat=iat+1,atoms%nat
+            dx=atoms%ratp(1,jat)-atoms%ratp(1,iat)
+            dy=atoms%ratp(2,jat)-atoms%ratp(2,iat)
+            dz=atoms%ratp(3,jat)-atoms%ratp(3,iat)
+            r=sqrt(dx*dx+dy*dy+dz*dz)
+            beta_jat=ann_arr%ann(atoms%itypat(jat))%gausswidth
+            gama=1.d0/sqrt(beta_iat**2+beta_jat**2)
+            a(iat,jat)=erf(gama*r)/r
+            a(jat,iat)=a(iat,jat)
+        enddo
+    enddo
+    a(atoms%nat+1,atoms%nat+1)=0.d0
+end subroutine get_amat_cent3
 !*****************************************************************************************
 subroutine cal_force_hardness_part1(parini,symfunc,iat,atoms,out_ann,ann_arr)
     use mod_interface
@@ -238,9 +330,9 @@ subroutine cal_force_hardness_part1(parini,symfunc,iat,atoms,out_ann,ann_arr)
                 tty=tty+ann_arr%ann(i)%d(j)*symfunc%y0d(j,2,ib)
                 ttz=ttz+ann_arr%ann(i)%d(j)*symfunc%y0d(j,3,ib)
             enddo
-            ann_arr%fatpq(1,ib)=ann_arr%fatpq(1,ib)+ttx*tt2
-            ann_arr%fatpq(2,ib)=ann_arr%fatpq(2,ib)+tty*tt2
-            ann_arr%fatpq(3,ib)=ann_arr%fatpq(3,ib)+ttz*tt2
+            ann_arr%fatpq_hardness(1,ib)=ttx*tt2
+            ann_arr%fatpq_hardness(2,ib)=tty*tt2
+            ann_arr%fatpq_hardness(3,ib)=ttz*tt2
         enddo
     endif
     if(trim(ann_arr%event)=='potential') then
@@ -259,15 +351,15 @@ subroutine cal_force_hardness_part1(parini,symfunc,iat,atoms,out_ann,ann_arr)
                 szy=szy+ann_arr%ann(i)%d(j)*symfunc%y0dr(j,8,ib)
                 szz=szz+ann_arr%ann(i)%d(j)*symfunc%y0dr(j,9,ib)
             enddo
-            ann_arr%stresspq(1,1,ib)=ann_arr%stresspq(1,1,ib)-sxx*tt2
-            ann_arr%stresspq(2,1,ib)=ann_arr%stresspq(2,1,ib)-syx*tt2
-            ann_arr%stresspq(3,1,ib)=ann_arr%stresspq(3,1,ib)-szx*tt2
-            ann_arr%stresspq(1,2,ib)=ann_arr%stresspq(1,2,ib)-sxy*tt2
-            ann_arr%stresspq(2,2,ib)=ann_arr%stresspq(2,2,ib)-syy*tt2
-            ann_arr%stresspq(3,2,ib)=ann_arr%stresspq(3,2,ib)-szy*tt2
-            ann_arr%stresspq(1,3,ib)=ann_arr%stresspq(1,3,ib)-sxz*tt2
-            ann_arr%stresspq(2,3,ib)=ann_arr%stresspq(2,3,ib)-syz*tt2
-            ann_arr%stresspq(3,3,ib)=ann_arr%stresspq(3,3,ib)-szz*tt2
+            ann_arr%stresspq_hardness(1,1,ib)=-sxx*tt2
+            ann_arr%stresspq_hardness(2,1,ib)=-syx*tt2
+            ann_arr%stresspq_hardness(3,1,ib)=-szx*tt2
+            ann_arr%stresspq_hardness(1,2,ib)=-sxy*tt2
+            ann_arr%stresspq_hardness(2,2,ib)=-syy*tt2
+            ann_arr%stresspq_hardness(3,2,ib)=-szy*tt2
+            ann_arr%stresspq_hardness(1,3,ib)=-sxz*tt2
+            ann_arr%stresspq_hardness(2,3,ib)=-syz*tt2
+            ann_arr%stresspq_hardness(3,3,ib)=-szz*tt2
         enddo
     endif
 end subroutine cal_force_hardness_part1
@@ -298,9 +390,9 @@ subroutine cal_force_hardness_part2(parini,symfunc,atoms,ann_arr)
                 write(*,'(2a)') 'ERROR: unknown approach in ANN, ',trim(ann_arr%approach)
                 stop
             endif
-            ttx=ann_arr%fatpq(1,ib)*qnet
-            tty=ann_arr%fatpq(2,ib)*qnet
-            ttz=ann_arr%fatpq(3,ib)*qnet
+            ttx=ann_arr%fatpq_hardness(1,ib)*qnet
+            tty=ann_arr%fatpq_hardness(2,ib)*qnet
+            ttz=ann_arr%fatpq_hardness(3,ib)*qnet
             ann_arr%fat_hardness(1,iat)=ann_arr%fat_hardness(1,iat)+ttx
             ann_arr%fat_hardness(2,iat)=ann_arr%fat_hardness(2,iat)+tty
             ann_arr%fat_hardness(3,iat)=ann_arr%fat_hardness(3,iat)+ttz
@@ -353,10 +445,9 @@ subroutine get_electrostatic_cent3(parini,atoms,ann_arr,epot_c,a,poisson)
     tt2=0.d0
     do iat=1,atoms%nat
         tt1=tt1+ann_arr%chi_o(iat)*atoms%qat(iat)
-        tt2=tt2+atoms%qat(iat)**2*0.5d0*ann_arr%ann(parini%ntypat+atoms%itypat(iat))%hardness
+        tt2=tt2+atoms%qat(iat)**2*0.5d0*ann_arr%hardness_o(iat)
     enddo
     call cal_electrostatic_ann(parini,atoms,ann_arr,a,poisson)
     epot_c=epot_es+tt1+tt2+ann_arr%ener_ref
     end associate
 end subroutine get_electrostatic_cent3
-
