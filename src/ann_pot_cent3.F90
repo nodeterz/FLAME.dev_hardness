@@ -103,14 +103,13 @@ subroutine cal_ann_cent3(parini,atoms,symfunc,ann_arr)
             stop 'ERROR: undefined content for ann_arr%event'
         endif
     enddo over_iat
-    write(98,'(a,3es14.6)')'J_max,J_min_J_var',maxval(ann_arr%hardness_o(1:parini%ntypat)),minval(ann_arr%hardness_o(1:parini%ntypat)),&
-                                               maxval(ann_arr%hardness_o(1:parini%ntypat))-minval(ann_arr%hardness_o(1:parini%ntypat))
     call init_electrostatic_cent3(parini,atoms,ann_arr,ann_arr%a,poisson)
     !This must be here since contribution from coulomb
     !interaction is calculated during the process of charge optimization.
     if(parini%iverbose>=2) call cpu_time(time4)
     call get_qat_from_chi_cent1(parini,ann_arr,atoms,poisson,ann_arr%a)
     if(parini%iverbose>=2) call cpu_time(time5)
+    call hardness_analysis_cent3(parini,atoms,ann_arr)
     atoms%stress(1:3,1:3)=0.d0
     atoms%fat(1:3,1:atoms%nat)=0.d0
     if(trim(ann_arr%event)=='potential' .or. trim(ann_arr%event)=='evalu') then
@@ -169,7 +168,7 @@ subroutine cal_ann_cent3(parini,atoms,symfunc,ann_arr)
         tt5=sqrt(tt5)
         ann_arr%fhardness_angle=tt6/(tt4*tt5)
         ann_arr%fhardness_norm=tt5/tt4
-        write(*,'(a,4es14.6)') 'f',tt2,tt5
+        write(49,'(a,2es19.8)') 'norm_force_chi,norm_force_J',tt2,tt5
     endif
     call fini_electrostatic_cent1(parini,atoms,poisson)
     !call repulsive_potential_cent(parini,atoms,ann_arr)
@@ -451,3 +450,36 @@ subroutine get_electrostatic_cent3(parini,atoms,ann_arr,epot_c,a,poisson)
     epot_c=epot_es+tt1+tt2+ann_arr%ener_ref
     end associate
 end subroutine get_electrostatic_cent3
+!*****************************************************************************************
+subroutine hardness_analysis_cent3(parini,atoms,ann_arr)
+    use mod_interface
+    use mod_parini, only: typ_parini
+    use mod_atoms, only: typ_atoms
+    use mod_ann, only: typ_ann_arr
+    implicit none
+    type(typ_parini), intent(in):: parini
+    type(typ_atoms), intent(in):: atoms
+    type(typ_ann_arr), intent(inout):: ann_arr
+    !local variables
+    integer:: iat, i , j !, ii1, ii2
+    real(8):: q, c !, tt1, tt2, ss1, ss2, tt1min, tt1max, tt2min, tt2max, ss1min, ss1max, ss2min, ss2max
+    real(8):: hardness_min_per_conf(10), hardness_max_per_conf(10)
+    !----------------------------------------------------
+    hardness_min_per_conf(1:10)= 1.d20
+    hardness_max_per_conf(1:10)=-1.d20
+    do iat=1,atoms%nat
+        c=ann_arr%hardness_o(iat)
+        i=atoms%itypat(iat)
+        j = i + parini%ntypat
+        ann_arr%hardness_min(i)=min(c,ann_arr%hardness_min(i))
+        ann_arr%hardness_max(i)=max(c,ann_arr%hardness_max(i))
+        hardness_min_per_conf(i)=min(c,hardness_min_per_conf(i))
+        hardness_max_per_conf(i)=max(c,hardness_max_per_conf(i))
+        ann_arr%hardness_sum(i)=ann_arr%hardness_sum(i)+c
+    enddo
+    do i=1,parini%ntypat
+        j = i + parini%ntypat
+        ann_arr%hardness_delta(i)=max(ann_arr%hardness_delta(i),hardness_max_per_conf(i)-hardness_min_per_conf(i))
+        ann_arr%hardness_delta(j)=max(ann_arr%hardness_delta(j),hardness_max_per_conf(j)-hardness_min_per_conf(j))
+    enddo
+end subroutine hardness_analysis_cent3

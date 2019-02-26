@@ -265,6 +265,10 @@ subroutine analyze_epoch_init(parini,ann_arr)
     ann_arr%chi_max(1:10)=-huge(1.d0)
     ann_arr%chi_sum(1:10)=0.d0
     ann_arr%chi_delta(1:10)=0.d0
+    ann_arr%hardness_min(1:10)=huge(1.d0)
+    ann_arr%hardness_max(1:10)=-huge(1.d0)
+    ann_arr%hardness_sum(1:10)=0.d0
+    ann_arr%hardness_delta(1:10)=0.d0
 end subroutine analyze_epoch_init
 !*****************************************************************************************
 subroutine analyze_epoch_print(parini,iter,ann_arr)
@@ -277,7 +281,7 @@ subroutine analyze_epoch_print(parini,iter,ann_arr)
     type(typ_ann_arr), intent(inout):: ann_arr
     !local variables
     integer:: i, ios
-    real(8):: ttavg, ttmin, ttmax, ssavg, ssmin, ssmax
+    real(8):: ttavg, ttmin, ttmax, ssavg, ssmin, ssmax, jjavg, jjmin, jjmax
     character(50):: fn_charge, fn_chi
     character(20):: str_key
     if(.not. (trim(ann_arr%approach)=='eem1' .or. trim(parini%approach_ann)=='cent1' &
@@ -335,7 +339,19 @@ subroutine analyze_epoch_print(parini,iter,ann_arr)
         call yaml_map('chimax',ssmax,fmt='(f8.3)',unit=ann_arr%iunit)
         call yaml_map('chivar',ssmax-ssmin,fmt='(f8.3)',unit=ann_arr%iunit)
         call yaml_mapping_close(unit=ann_arr%iunit)
+
         !write(71,'(i6,4es14.5)') iter,ssavg,ssmin,ssmax,ssmax-ssmin
+        jjavg=ann_arr%hardness_sum(i)/real(ann_arr%natsum(i),8)
+        jjmin=ann_arr%hardness_min(i)
+        jjmax=ann_arr%hardness_max(i)
+        write(str_key,'(2a)') 'hardness_',trim(parini%stypat(i))
+        call yaml_mapping_open(trim(str_key),flow=.true.,unit=ann_arr%iunit)
+        call yaml_map('iter',iter,unit=ann_arr%iunit)
+        call yaml_map('Javg',jjavg,fmt='(f8.3)',unit=ann_arr%iunit)
+        call yaml_map('Jmin',jjmin,fmt='(f8.3)',unit=ann_arr%iunit)
+        call yaml_map('Jmax',jjmax,fmt='(f8.3)',unit=ann_arr%iunit)
+        call yaml_map('Jvar',jjmax-jjmin,fmt='(f8.3)',unit=ann_arr%iunit)
+        call yaml_mapping_close(unit=ann_arr%iunit)
         !if (trim(parini%stypat(i))=='O' .and. ssmax-ssmin> 0.01) stop
         !close(61)
         !close(71)
