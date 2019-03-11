@@ -363,9 +363,11 @@ subroutine write_ann_yaml_cent3(parini,filename,ann,ann_2,rcut)
         trim(parini%approach_ann)=='cent2' .or. trim(parini%approach_ann)=='cent3') then
         call set(subdict_ann//"ampl_chi",ann%ampl_chi)
         call set(subdict_ann//"prefactor_chi",ann%prefactor_chi)
+        call set(subdict_ann//"ampl_hardness",ann%ampl_hardness)
+        call set(subdict_ann//"prefactor_hardness",ann%prefactor_hardness)
         call set(subdict_ann//"ener_ref",ann%ener_ref)
         call set(subdict_ann//"gausswidth",ann%gausswidth)
-        call set(subdict_ann//"hardness",ann%hardness)
+        call set(subdict_ann//"hardness0",ann%hardness0)
         call set(subdict_ann//"chi0",ann%chi0)
         call set(subdict_ann//"qinit",ann%qinit)
     endif
@@ -664,7 +666,7 @@ subroutine read_ann_yaml(parini,ann_arr)
     character(16):: fn
     character(1):: fn_tt
     character(50):: filename
-    do iann=1,ann_arr%nann
+    do iann=1,parini%ntypat
         if (parini%restart_param) then
             write(fn,'(a15)') '.ann.input.yaml'
         else
@@ -684,30 +686,73 @@ subroutine read_ann_yaml(parini,ann_arr)
             stop 'ERROR: reading ANN parameters is only for cent1,cent2,cent3,tb'
         endif
         !-------------------------------------------------------
-        call get_symfunc_parameters_yaml(parini,iproc,filename,ann_arr%ann(iann),rcut)
-        ann_arr%rcut = rcut
-        do i0=1,ann_arr%ann(iann)%nn(0)
-            bound_l=ann_arr%ann(iann)%gbounds(1,i0)
-            bound_u=ann_arr%ann(iann)%gbounds(2,i0)
-            ann_arr%ann(iann)%two_over_gdiff(i0)=2.d0/(bound_u-bound_l)
-        enddo
-        !-------------------------------------------------------
-        i1=0
-        do ialpha=1,ann_arr%ann(iann)%nl
-            do j=1,ann_arr%ann(iann)%nn(ialpha)
-                do i=1,ann_arr%ann(iann)%nn(ialpha-1)
-                    ann_arr%ann(iann)%a(i,j,ialpha)=ann_arr%ann(iann)%dict//"weights"//i1
+        if(trim(ann_arr%approach)/='cent3') then
+            !-------------------------------------------------------
+            call get_symfunc_parameters_yaml(parini,iproc,filename,ann_arr%ann(iann),rcut)
+            ann_arr%rcut = rcut
+            do i0=1,ann_arr%ann(iann)%nn(0)
+                bound_l=ann_arr%ann(iann)%gbounds(1,i0)
+                bound_u=ann_arr%ann(iann)%gbounds(2,i0)
+                ann_arr%ann(iann)%two_over_gdiff(i0)=2.d0/(bound_u-bound_l)
+            enddo
+            !-------------------------------------------------------
+            i1=0
+            do ialpha=1,ann_arr%ann(iann)%nl
+                do j=1,ann_arr%ann(iann)%nn(ialpha)
+                    do i=1,ann_arr%ann(iann)%nn(ialpha-1)
+                        ann_arr%ann(iann)%a(i,j,ialpha)=ann_arr%ann(iann)%dict//"weights"//i1
+                        i1=i1+1
+                    enddo
+                enddo
+                do i=1,ann_arr%ann(iann)%nn(ialpha)
+                    ann_arr%ann(iann)%b(i,ialpha)=ann_arr%ann(iann)%dict//"weights"//i1
                     i1=i1+1
                 enddo
             enddo
-            do i=1,ann_arr%ann(iann)%nn(ialpha)
-                ann_arr%ann(iann)%b(i,ialpha)=ann_arr%ann(iann)%dict//"weights"//i1
-                i1=i1+1
+            !-------------------------------------------------------
+        elseif(trim(ann_arr%approach)=='cent3') then
+            !-------------------------------------------------------
+            call get_symfunc_parameters_yaml(parini,iproc,filename,ann_arr%ann(iann),rcut)
+            call get_symfunc_parameters_yaml(parini,iproc,filename,ann_arr%ann(iann+parini%ntypat),rcut)
+            ann_arr%rcut = rcut
+            do i0=1,ann_arr%ann(iann+parini%ntypat)%nn(0)
+                bound_l=ann_arr%ann(iann+parini%ntypat)%gbounds(1,i0)
+                bound_u=ann_arr%ann(iann+parini%ntypat)%gbounds(2,i0)
+                ann_arr%ann(iann+parini%ntypat)%two_over_gdiff(i0)=2.d0/(bound_u-bound_l)
             enddo
-        enddo
+            !-------------------------------------------------------
+            i1=0
+            do ialpha=1,ann_arr%ann(iann)%nl
+                do j=1,ann_arr%ann(iann)%nn(ialpha)
+                    do i=1,ann_arr%ann(iann)%nn(ialpha-1)
+                        ann_arr%ann(iann)%a(i,j,ialpha)=ann_arr%ann(iann)%dict//"weights_chi"//i1
+                        i1=i1+1
+                    enddo
+                enddo
+                do i=1,ann_arr%ann(iann)%nn(ialpha)
+                    ann_arr%ann(iann)%b(i,ialpha)=ann_arr%ann(iann)%dict//"weights_chi"//i1
+                    i1=i1+1
+                enddo
+            enddo
+            i1=0
+            do ialpha=1,ann_arr%ann(iann+parini%ntypat)%nl
+                do j=1,ann_arr%ann(iann+parini%ntypat)%nn(ialpha)
+                    do i=1,ann_arr%ann(iann+parini%ntypat)%nn(ialpha-1)
+                        ann_arr%ann(iann+parini%ntypat)%a(i,j,ialpha)=ann_arr%ann(iann+parini%ntypat)%dict//"weights_hardness"//i1
+                        i1=i1+1
+                    enddo
+                enddo
+                do i=1,ann_arr%ann(iann+parini%ntypat)%nn(ialpha)
+                    ann_arr%ann(iann+parini%ntypat)%b(i,ialpha)=ann_arr%ann(iann+parini%ntypat)%dict//"weights_hardness"//i1
+                    i1=i1+1
+                enddo
+            enddo
+        endif
         !-------------------------------------------------------
         call dict_free(ann_arr%ann(iann)%dict)
         nullify(ann_arr%ann(iann)%dict)
+        call dict_free(ann_arr%ann(iann+parini%ntypat)%dict)
+        nullify(ann_arr%ann(iann+parini%ntypat)%dict)
     enddo
 end subroutine read_ann_yaml
 !*****************************************************************************************

@@ -22,6 +22,7 @@ subroutine cal_ann_cent3(parini,atoms,symfunc,ann_arr)
     real(8):: time1, time2, time3, time4, time5, time6, time7, time8
     real(8):: tt1, tt2, tt3, fx_es, fy_es, fz_es, hinv(3,3), vol
     real(8):: tt4, tt5, tt6
+    real(8):: ampl_grad_chi, ampl_grad_hardness 
     call f_routine(id='cal_ann_cent3')
     if(.not. (trim(parini%task)=='ann' .and. trim(parini%subtask_ann)=='train')) then
         allocate(ann_arr%chi_i(1:atoms%nat))
@@ -69,6 +70,13 @@ subroutine cal_ann_cent3(parini,atoms,symfunc,ann_arr)
         allocate(ann_arr%stresspq_hardness(1:3,1:3,1:symfunc%linked_lists%maxbound_rad))
     endif
     if(parini%iverbose>=2) call cpu_time(time3)
+    if(ann_arr%istep_opt < 20) then
+        ampl_grad_chi = 0.d0
+        ampl_grad_hardness = parini%ampl_grad_hardness
+    else
+        ampl_grad_chi = 1.d0
+        ampl_grad_hardness = 0.d0 
+    endif
     over_iat: do iat=1,atoms%nat
         i=atoms%itypat(iat)
         j=parini%ntypat+atoms%itypat(iat)
@@ -90,14 +98,14 @@ subroutine cal_ann_cent3(parini,atoms,symfunc,ann_arr)
             tt1=tanh(ann_arr%ann(i)%prefactor_chi*out_ann)
             ann_arr%chi_o(iat)=ann_arr%ann(i)%ampl_chi*tt1+ann_arr%ann(i)%chi0
             call convert_ann_epotd(ann_arr%ann(i),ann_arr%num(i),ann_arr%g_per_atom_chi(1,iat))
-            ann_arr%g_per_atom_chi(1:ann_arr%num(1),iat)=ann_arr%g_per_atom_chi(1:ann_arr%num(1),iat)*ann_arr%ann(i)%ampl_chi*ann_arr%ann(i)%prefactor_chi*(1.d0-tt1**2)
+            ann_arr%g_per_atom_chi(1:ann_arr%num(1),iat)=ampl_grad_chi*ann_arr%g_per_atom_chi(1:ann_arr%num(1),iat)*ann_arr%ann(i)%ampl_chi*ann_arr%ann(i)%prefactor_chi*(1.d0-tt1**2)
 
             call cal_architecture_der(ann_arr%ann(j),out_ann_2)
             ann_arr%hardness_i(iat)=out_ann_2
             tt4=tanh(ann_arr%ann(j)%prefactor_hardness*out_ann_2)
             ann_arr%hardness_o(iat)=ann_arr%ann(j)%ampl_hardness*tt4+ann_arr%ann(j)%hardness0
             call convert_ann_epotd(ann_arr%ann(j),ann_arr%num(i),ann_arr%g_per_atom_hardness(1,iat))
-            ann_arr%g_per_atom_hardness(1:ann_arr%num(1),iat)=parini%ampl_grad_hardness*ann_arr%g_per_atom_hardness(1:ann_arr%num(1),iat)*&
+            ann_arr%g_per_atom_hardness(1:ann_arr%num(1),iat)=ampl_grad_hardness*ann_arr%g_per_atom_hardness(1:ann_arr%num(1),iat)*&
                                                               ann_arr%ann(j)%ampl_hardness*ann_arr%ann(j)%prefactor_hardness*(1.d0-tt4**2)
         else
             stop 'ERROR: undefined content for ann_arr%event'
