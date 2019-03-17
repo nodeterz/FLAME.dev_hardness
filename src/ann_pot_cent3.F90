@@ -70,12 +70,20 @@ subroutine cal_ann_cent3(parini,atoms,symfunc,ann_arr)
         allocate(ann_arr%stresspq_hardness(1:3,1:3,1:symfunc%linked_lists%maxbound_rad))
     endif
     if(parini%iverbose>=2) call cpu_time(time3)
-    if(ann_arr%istep_opt < 20) then
-        ampl_grad_chi = 0.d0
-        ampl_grad_hardness = parini%ampl_grad_hardness
+    if(ann_arr%istep_opt < 10) then
+        if (mod(ann_arr%istep_opt,2)==0) then
+            ampl_grad_chi = 1.d0
+            ampl_grad_hardness = 0.d0 
+        elseif(mod(ann_arr%istep_opt,2)==1) then
+            ampl_grad_chi = 0.d0
+            ampl_grad_hardness = parini%ampl_grad_hardness
+        endif
+        !ampl_grad_chi = 0.d0
+        !ampl_grad_hardness = parini%ampl_grad_hardness 
     else
         ampl_grad_chi = 1.d0
-        ampl_grad_hardness = 0.d0 
+        ampl_grad_hardness = parini%ampl_grad_hardness 
+        !ampl_grad_hardness = 0.d0
     endif
     over_iat: do iat=1,atoms%nat
         i=atoms%itypat(iat)

@@ -636,7 +636,7 @@ subroutine set_gbounds(parini,ann_arr,atoms_arr,strmess,symfunc_arr)
     endif
     !write(*,'(a,i3,i6)') 'iproc,nconf ',iproc,atoms_arr%nconf
     do iconf=1,atoms_arr%nconf
-        symfunc_arr%symfunc(iconf)%ng=ann_arr%ann(1)%nn(0) !HERE
+        symfunc_arr%symfunc(iconf)%ng=ann_arr%ann(1)%nn(0) 
         symfunc_arr%symfunc(iconf)%nat=atoms_arr%atoms(iconf)%nat
     enddo
     configuration: do iconf=1+iproc,atoms_arr%nconf,nproc
@@ -684,9 +684,9 @@ subroutine write_symfunc(parini,iconf,atoms_arr,strmess,symfunc_arr)
     character(*), intent(in):: strmess
     type(typ_symfunc_arr), intent(inout):: symfunc_arr
     !local variables
-    real(8), allocatable:: wa(:)
+    real(8), allocatable:: wa(:),wb(:,:)
     integer:: nwa
-    character(30):: filename
+    character(30):: filename,filename_2
     integer:: i, ig, iat, ios, n, ib
     !Symmetry functions are written into files to be used for
     !subsequent training runs.
@@ -694,6 +694,13 @@ subroutine write_symfunc(parini,iconf,atoms_arr,strmess,symfunc_arr)
         write(filename,'(a25,i5.5)') '../symfunc/train.symfunc.',iconf
     elseif(trim(strmess)=='bounds_valid') then
         write(filename,'(a25,i5.5)') '../symfunc/valid.symfunc.',iconf
+    else
+        stop 'ERROR: invalid content in strmess in gset_bounds '
+    endif
+    if(trim(strmess)=='bounds_train') then
+        write(filename_2,'(a25)') 'train.symfunc.yaml'
+    elseif(trim(strmess)=='bounds_valid') then
+        write(filename_2,'(a25)') 'valid.symfunc.yaml'
     else
         stop 'ERROR: invalid content in strmess in gset_bounds '
     endif
@@ -729,12 +736,17 @@ subroutine write_symfunc(parini,iconf,atoms_arr,strmess,symfunc_arr)
         stop
         !----------------------------------------------------------------------------
     else
+        allocate(wb(1:atoms_arr%atoms(iconf)%nat,1:symfunc_arr%symfunc(iconf)%ng))
         do iat=1,atoms_arr%atoms(iconf)%nat
             do ig=1,symfunc_arr%symfunc(iconf)%ng
                 n=n+1
                 wa(n)=symfunc_arr%symfunc(iconf)%y(ig,iat)
+                wb(iat,ig)=symfunc_arr%symfunc(iconf)%y(ig,iat)
             enddo
+            !HERE
         enddo
+        call write_symfunc_conf(filename_2,atoms_arr%atoms(iconf),iconf,wb,symfunc_arr%symfunc(iconf)%ng)
+        deallocate(wb)
         if(parini%save_symfunc_force_ann) then
             do ib=1,nb
                 do i=1,3
@@ -983,7 +995,7 @@ subroutine save_gbounds(parini,ann_arr,atoms_arr,strmess,symfunc_arr)
     call yaml_mapping_open('symfunc bounds')
     !do i=1,ann_arr%nann ASK Dr Ghasemi
     do i=1,parini%ntypat
-    do ig=1,ann_arr%ann(1)%nn(0) !HERE
+    do ig=1,ann_arr%ann(1)%nn(0) 
         if(iproc==0) then
         call yaml_sequence(advance='no')
         if(parini%bondbased_ann) then
@@ -1295,7 +1307,7 @@ subroutine ann_evaluate(parini,iter,ann_arr,symfunc_arr,atoms_arr,data_set)
         !        (atoms%epot-atoms_arr%atoms(iconf)%epot)/atoms_arr%atoms(iconf)%nat
         !endif
         tt=abs(atoms%epot-atoms_arr%atoms(iconf)%epot)/atoms_arr%atoms(iconf)%nat
-        !HERE
+        
         if(parini%print_energy) then
             write(iunit,'(i7,es14.5,a40,i6,a)') iconf,tt,trim(atoms_arr%fn(iconf)),atoms_arr%lconf(iconf),trim(data_set)
         endif
@@ -1387,4 +1399,56 @@ subroutine ann_evaluate(parini,iter,ann_arr,symfunc_arr,atoms_arr,data_set)
     endif
     ann_arr%compute_symfunc=.false.
 end subroutine ann_evaluate
+!*****************************************************************************************
+subroutine write_symfunc_conf(filename,atoms,iconf,wb,len)
+    !RZX
+    use mod_interface
+    use mod_atoms, only: typ_atoms
+    use dictionaries
+    use futile
+    use yaml_parse
+    use dynamic_memory
+    use yaml_output
+    implicit none
+    type(typ_atoms), intent(in):: atoms
+    character(30), intent(in):: filename
+    integer, intent(in):: iconf, len
+    real(8), intent(in):: wb(1:atoms%nat,1:len)
+    !local variables
+    integer:: ios, i, nconf, iunit, ierr, ii, iat
+    type(dictionary), pointer :: dict1, sym_dict, conf_dict, sym_list
+    dict1=>dict_new()
+    call set(dict1//'conf',dict_new())
+    conf_dict=>dict1//'conf'
+    call set(conf_dict//'iconf',iconf)
+    call set(conf_dict//'nat',atoms%nat)
+    call set(conf_dict//'symfunc',list_new(.item. "it will be overwritten"))
+    sym_list=>conf_dict//'symfunc'
+    do iat = 1 , atoms%nat
+        ii = iat-1
+        !call set(sym_list//ii,list_new(.item. "it will be overwritten"))
+        call set(sym_list//ii//'iat',iat)
+        call set(sym_list//ii//'sat',atoms%sat(iat))
+        call set(sym_list//ii//'sym',(/wb(iat,:)/))
+    enddo
+    iunit=f_get_free_unit(10**5)
+    if(iconf==1) then
+        call yaml_set_stream(unit=iunit,filename=trim(filename),&
+             record_length=92,istat=ierr,setdefault=.false.,tabbing=0,position='rewind')
+     else
+        call yaml_set_stream(unit=iunit,filename=trim(filename),&
+             record_length=92,istat=ierr,setdefault=.false.,tabbing=0,position='append')
+    endif
+    if(ierr/=0) then
+       call yaml_warning('Failed to create'//trim(filename)//', &
+           error code='//trim(yaml_toa(ierr)))
+    end if
+    call yaml_release_document(unit=iunit)
+    call yaml_new_document(unit=iunit)
+    call yaml_dict_dump(dict1,unit=iunit)
+    nullify(conf_dict)
+    call dict_free(dict1)
+    nullify(dict1)
+    call yaml_close_stream(unit=iunit)
+end subroutine write_symfunc_conf
 !*****************************************************************************************

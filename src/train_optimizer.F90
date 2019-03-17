@@ -133,7 +133,7 @@ subroutine ekf_rivals(parini,ann_arr,opt_ann)
         alpha=100.d-2
         rf=1.d-6
     elseif(trim(parini%approach_ann)=='cent3') then
-        r0=10.d0
+        r0 = 30.d0
         alpha=100.d-2
         rf=1.d-6
     elseif(trim(parini%approach_ann)=='tb') then
